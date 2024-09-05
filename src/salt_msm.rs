@@ -76,7 +76,7 @@ impl WnafContext {
         }*/
         // The modification principle comes from go-ipa(GitHub - crate-crypto/go-ipa: A Go implementation of cryptographic primitives for Verkle Trees)
         //tt_record!("create index start");
-        let data = WnafContext::to_scalar_data::<G>(scalar, self.window_size);
+        let data = WnafContext::scalar_to_wnaf_data::<G>(scalar, self.window_size);
 
         let mut c = 0;
         let thr = 1 << (self.window_size - 1);
@@ -122,8 +122,8 @@ impl WnafContext {
     }
 
     #[inline]
-    fn to_scalar_data<G: Group>(scalar: &G::ScalarField, w: usize) -> Vec<u64> {
-        let source = WnafContext::to_u64::<G>(scalar);
+    fn scalar_to_wnaf_data<G: Group>(scalar: &G::ScalarField, w: usize) -> Vec<u64> {
+        let source = WnafContext::scalar_to_u64::<G>(scalar);
         let mask = (1 << w) - 1;
         let mut data = vec![];
         let mut off = w;
@@ -150,7 +150,7 @@ impl WnafContext {
     }
 
     #[inline]
-    fn to_u64<G: Group>(scalar: &G::ScalarField) -> Vec<u64> {
+    fn scalar_to_u64<G: Group>(scalar: &G::ScalarField) -> Vec<u64> {
         let b = scalar.into_bigint();
         let mut num = b.num_bits();
         num = if num & 63 == 0 {
@@ -248,7 +248,5 @@ mod tests {
 
         result
     }
-
-
 
 }

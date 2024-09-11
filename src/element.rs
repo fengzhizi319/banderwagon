@@ -10,6 +10,18 @@ pub use ark_ed_on_bls12_381_bandersnatch::Fr;
 pub struct Element(pub(crate) EdwardsProjective);
 
 impl PartialEq for Element {
+    /// 比较两个 `Element` 是否相等。
+    ///
+    /// # 参数
+    /// - `self`: 当前的 `Element`。
+    /// - `other`: 另一个 `Element`。
+    ///
+    /// # 返回值
+    /// 如果两个 `Element` 相等，则返回 `true`，否则返回 `false`。
+    ///
+    /// # 说明
+    /// 该函数首先检查两个点的 x 和 y 坐标是否都为 0。如果是，则返回 `false`。
+    /// 否则，通过比较 `x1 * y2` 和 `x2 * y1` 是否相等来判断两个点是否相等。
     fn eq(&self, other: &Self) -> bool {
         let x1 = self.0.x;
         let y1 = self.0.y;
@@ -17,12 +29,9 @@ impl PartialEq for Element {
         let x2 = other.0.x;
         let y2 = other.0.y;
 
-        // One should not be able to generate this point, unless they have assigned `x` and `y`
-        // to be 0 directly and have bypassed the API.
-        //
-        // This is possible in languages such as C, we will leave this check here
-        // for those who are using this as a reference, or in the case that there is some way to
-        // create an Element and bypass the checks.
+        // 如果 x 和 y 都为 0，则不应该生成这个点，除非直接分配了 x 和 y 为 0 并绕过了 API。
+        // 这种情况在 C 语言等中是可能的，我们在这里保留这个检查，以防有人将其作为参考，
+        // 或者在某种情况下创建了一个绕过检查的 Element。
         if x1.is_zero() & y1.is_zero() {
             return false;
         }
@@ -30,15 +39,24 @@ impl PartialEq for Element {
             return false;
         }
 
+        // 检查两个点是否相等，通过比较 x1 * y2 和 x2 * y1 是否相等
         (x1 * y2) == (x2 * y1)
     }
 }
 
 impl Element {
+
+    /// 将 `Element` 序列化为字节数组。
+    ///
+    /// # 返回值
+    /// 返回一个 32 字节的数组，表示序列化后的 `Element`。
+    ///
+    /// # 说明
+    /// 该函数假设内部的点是“正确的”。我们通过序列化 x 坐标乘以 y 的符号来序列化一个正确的点。
     pub fn to_bytes(&self) -> [u8; 32] {
-        // We assume that internally this point is "correct"
+        // 我们假设内部这个点是“正确的”
         //
-        // We serialize a correct point by serializing the x co-ordinate times sign(y)
+        // 我们通过序列化 x 坐标乘以 y 的符号来序列化一个正确的点
         let affine = EdwardsAffine::from(self.0);
         let x = if is_positive(affine.y) {
             affine.x
@@ -49,11 +67,12 @@ impl Element {
         x.serialize_compressed(&mut bytes[..])
             .expect("serialization failed");
 
-        // reverse bytes to big endian, for interoperability
+        // 将字节反转为大端字节序，以实现互操作性
         bytes.reverse();
 
         bytes
     }
+
 
     // Do not compare the results of this function.
     //

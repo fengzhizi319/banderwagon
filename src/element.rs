@@ -105,7 +105,7 @@ impl Element {
         let mut zs_mul = <BandersnatchConfig as CurveConfig>::BaseField::ONE;
 
         //zs_mul = 1*z1*z2*z3.....
-	    //zi_mul[i] = 1*z1...zi-1
+        //zi_mul[i] = 1*z1...zi-1
         for i in 0..es.len() {
             if es[i].z.is_zero() {
                 zeros[i] = true;
@@ -140,14 +140,14 @@ impl Element {
     #[inline]
     pub fn serialize_map_to_field_batch(es :&[EdwardsProjective]) -> Vec<[u8; 32]> {
         // The modification principle comes from go-ipa(https://github.com/crate-crypto/go-ipa)
-     
+
         let mut bytes = vec![[0 as u8; 32]; es.len()];
         let mut yi_mul = vec![<BandersnatchConfig as CurveConfig>::BaseField::ZERO; es.len()];
         let mut zeros = vec![false; es.len()];
         let mut ys_mul = <BandersnatchConfig as CurveConfig>::BaseField::ONE;
 
         //ys_mul = 1*y1*y2*y3.....
-	    //yi_mul[i] = 1*y1...yi-1
+        //yi_mul[i] = 1*y1...yi-1
         for i in 0..es.len() {
             if es[i].y.is_zero() {
                 zeros[i] = true;
@@ -366,9 +366,15 @@ mod tests {
 mod test {
     use super::*;
     // Two torsion point, *not*  point at infinity {0,-1,0,1}
+    /// 返回一个二阶点（two-torsion point），即其两倍为无穷远点。
     fn two_torsion() -> EdwardsProjective {
         EdwardsProjective::new_unchecked(Fq::zero(), -Fq::one(), Fq::zero(), Fq::one())
     }
+
+    /// 返回两个无穷远点。
+    ///
+    /// # 说明
+    /// 这些点的 Z 坐标为 0，因此在仿射坐标系中表示无穷远点。
     fn points_at_infinity() -> [EdwardsProjective; 2] {
         let d = BandersnatchConfig::COEFF_D;
         let a = BandersnatchConfig::COEFF_A;
@@ -379,7 +385,6 @@ mod test {
 
         [p1, p2]
     }
-
     #[test]
     fn fixed_test_vectors() {
         let expected_bit_string = [

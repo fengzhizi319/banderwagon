@@ -105,7 +105,7 @@ impl Element {
         let mut zs_mul = <BandersnatchConfig as CurveConfig>::BaseField::ONE;
 
         //zs_mul = 1*z1*z2*z3.....
-	    //zi_mul[i] = 1*z1...zi-1
+        //zi_mul[i] = 1*z1...zi-1
         for i in 0..es.len() {
             if es[i].z.is_zero() {
                 zeros[i] = true;
@@ -140,14 +140,14 @@ impl Element {
     #[inline]
     pub fn serialize_map_to_field_batch(es :&[EdwardsProjective]) -> Vec<[u8; 32]> {
         // The modification principle comes from go-ipa(https://github.com/crate-crypto/go-ipa)
-     
+
         let mut bytes = vec![[0 as u8; 32]; es.len()];
         let mut yi_mul = vec![<BandersnatchConfig as CurveConfig>::BaseField::ZERO; es.len()];
         let mut zeros = vec![false; es.len()];
         let mut ys_mul = <BandersnatchConfig as CurveConfig>::BaseField::ONE;
 
         //ys_mul = 1*y1*y2*y3.....
-	    //yi_mul[i] = 1*y1...yi-1
+        //yi_mul[i] = 1*y1...yi-1
         for i in 0..es.len() {
             if es[i].y.is_zero() {
                 zeros[i] = true;
@@ -366,9 +366,15 @@ mod tests {
 mod test {
     use super::*;
     // Two torsion point, *not*  point at infinity {0,-1,0,1}
+    /// 返回一个二阶点（two-torsion point），即其两倍为无穷远点。
     fn two_torsion() -> EdwardsProjective {
         EdwardsProjective::new_unchecked(Fq::zero(), -Fq::one(), Fq::zero(), Fq::one())
     }
+
+    /// 返回两个无穷远点。
+    ///
+    /// # 说明
+    /// 这些点的 Z 坐标为 0，因此在仿射坐标系中表示无穷远点。
     fn points_at_infinity() -> [EdwardsProjective; 2] {
         let d = BandersnatchConfig::COEFF_D;
         let a = BandersnatchConfig::COEFF_A;
@@ -379,7 +385,6 @@ mod test {
 
         [p1, p2]
     }
-
     #[test]
     fn fixed_test_vectors() {
         let expected_bit_string = [
@@ -414,55 +419,113 @@ mod test {
 
     #[test]
     fn ser_der_roundtrip() {
+        // 获取 Edwards 曲线的生成点
         let point = EdwardsProjective::generator();
 
+        // 获取一个二阶点（two-torsion point）
         let two_torsion_point = two_torsion();
 
+        // 创建一个 Element 实例，包含生成点
         let element1 = Element(point);
+        // 将 element1 序列化为字节数组
         let bytes1 = element1.to_bytes();
 
+        // 创建另一个 Element 实例，包含生成点和二阶点的和
         let element2 = Element(point + two_torsion_point);
+        // 将 element2 序列化为字节数组
         let bytes2 = element2.to_bytes();
 
+        // 确保两个序列化后的字节数组相等
         assert_eq!(bytes1, bytes2);
 
+        // 从字节数组反序列化为 Element 实例
         let got = Element::from_bytes(&bytes1).expect("points are in the valid subgroup");
 
+        // 确保反序列化后的 Element 实例与原始实例相等
         assert!(got == element1);
         assert!(got == element2);
     }
     #[test]
+    /// This test checks that points at infinity do not pass the Legendre check.
+    ///
+    /// 该测试检查无穷远点是否通过勒让德检查。
+    ///
+    /// # Explanation
+    /// We cannot use the points at infinity themselves as they have Z=0, which will panic when converting to affine coordinates.
+    /// So we create a point which is the sum of the point at infinity and another point.
+    ///
+    /// # 说明
+    /// 我们不能直接使用无穷远点，因为它们的 Z 坐标为 0，在转换为仿射坐标时会引发 panic。
+    /// 因此，我们创建一个点，该点是无穷远点和另一个点的和。
     fn check_infinity_does_not_pass_legendre() {
-        // We cannot use the points at infinity themselves
-        // as they have Z=0, which will panic when converting to
-        // affine co-ordinates. So we create a point which is
-        // the sum of the point at infinity and another point
+        // Get the first point at infinity
+        // 获取第一个无穷远点
         let point = points_at_infinity()[0];
+
+        // Get the generator point of the Edwards curve
+        // 获取 Edwards 曲线的生成点
         let gen = EdwardsProjective::generator();
+
+        // Create a new point by adding the generator point four times
+        // 通过将生成点加四次来创建一个新点
         let gen2 = gen + gen + gen + gen;
 
+        // Sum the point at infinity and the new point
+        // 将无穷远点和新点相加
         let res = point + gen + gen2;
 
+        // Create an Element instance with the resulting point
+        // 使用结果点创建一个 Element 实例
         let element1 = Element(res);
+
+        // Serialize the Element instance to a byte array
+        // 将 Element 实例序列化为字节数组
         let bytes1 = element1.to_bytes();
 
+        // Check if deserialization of the byte array returns a valid Element instance
+        // 检查字节数组的反序列化是否返回有效的 Element 实例
         if Element::from_bytes(&bytes1).is_some() {
+            // If it does, panic with an error message
+            // 如果是，则引发错误信息
             panic!("point contains a point at infinity and should not have passed deserialization")
         }
     }
 
     #[test]
+    /// This test checks the correctness of the two-torsion point and points at infinity.
+    ///
+    /// 该测试检查二阶点和无穷远点的正确性。
+    ///
+    /// # Explanation
+    /// A two-torsion point is a point that, when doubled, results in the point at infinity.
+    /// Points at infinity have a Z coordinate of 0, which means they represent points at infinity in affine coordinates.
+    ///
+    /// # 说明
+    /// 二阶点是指当其倍加时结果为无穷远点的点。
+    /// 无穷远点的 Z 坐标为 0，这意味着它们在仿射坐标系中表示无穷远点。
     fn two_torsion_correct() {
+        // Get the two-torsion point
+        // 获取二阶点
         let two_torsion_point = two_torsion();
+        // Ensure the two-torsion point is not zero
+        // 确保二阶点不为零
         assert!(!two_torsion_point.is_zero());
 
+        // Double the two-torsion point and check if the result is zero (point at infinity)
+        // 将二阶点倍加并检查结果是否为零（无穷远点）
         let result = two_torsion_point.double();
         assert!(result.is_zero());
 
+        // Get the points at infinity
+        // 获取无穷远点
         let [inf1, inf2] = points_at_infinity();
+        // Ensure the points at infinity are not zero
+        // 确保无穷远点不为零
         assert!(!inf1.is_zero());
         assert!(!inf2.is_zero());
 
+        // Double the points at infinity and check if the results are zero (point at infinity)
+        // 将无穷远点倍加并检查结果是否为零（无穷远点）
         assert!(inf1.double().is_zero());
         assert!(inf2.double().is_zero());
     }

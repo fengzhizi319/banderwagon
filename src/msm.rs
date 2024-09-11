@@ -110,14 +110,18 @@ impl MSMPrecompWnaf {
     /// # 返回值
     /// 并行 MSM 结果的 `Element`。
     pub fn mul_par(&self, scalars: &[Fr]) -> Element {
+        // 创建一个新的 WNAF 上下文
         let wnaf_context = WnafContext::new(self.window_size);
-        let result: EdwardsProjective = scalars
-            .par_iter()
-            .zip(self.tables.par_iter())
-            .filter(|(scalar, _)| !scalar.is_zero())
-            .map(|(scalar, table)| wnaf_context.mul_with_table(table, scalar).unwrap())
-            .sum();
 
+        // 并行执行多标量乘法（MSM）
+        let result: EdwardsProjective = scalars
+            .par_iter() // 并行迭代标量
+            .zip(self.tables.par_iter()) // 并行迭代预计算表
+            .filter(|(scalar, _)| !scalar.is_zero()) // 过滤掉零标量
+            .map(|(scalar, table)| wnaf_context.mul_with_table(table, scalar).unwrap()) // 使用 WNAF 表进行标量乘法
+            .sum(); // 求和得到结果
+
+        // 返回 MSM 结果的 `Element`
         Element(result)
     }
 }
@@ -128,6 +132,12 @@ mod tests {
     use crate::{multi_scalar_mul, Element};
 
     #[test]
+    fn testmain(){
+        let s = "Hello world!".to_string();
+        let s1 = s;
+        // println!("s: {:?}", s); // 此行打开编译将报错
+        println!("s1: {:?}", s1);
+    }
     #[test]
     /// This test checks the correctness of the multi-scalar multiplication (MSM) implementation.
     ///

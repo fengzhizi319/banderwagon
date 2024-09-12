@@ -27,16 +27,19 @@ impl WnafContext {
         let threshold = 1 << (self.window_size - 1);
 
         for _ in 0..window_count {
+            // 初始化 current_base 为 base
             let mut current_base = base;
-            for i in 0..(1 << self.window_size) - 1 {
-                if i < threshold {
-                    table.push(current_base.clone());
-                }
+            // 遍历窗口中的元素
+            for _ in 0..threshold {
+                // 将 current_base 添加到表中
+                table.push(current_base);
+                // 更新 current_base，将其加上 base
                 current_base += &base;
             }
+            // 更新 base 为 current_base
             base = current_base;
         }
-
+        // 返回预计算表
         table
     }
 

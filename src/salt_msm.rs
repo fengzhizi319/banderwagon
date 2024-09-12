@@ -29,15 +29,15 @@ impl WnafContext {
         for _ in 0..window_count {
             // 初始化 current_base 为 base
             let mut current_base = base;
-            // 遍历窗口中的元素
-            for _ in 0..threshold {
+            // 遍历窗口中的元素,table中为G,2G,3G,...,2^(window_size-1)G
+            table.push(current_base);
+            for _ in 1..threshold {
+                current_base += &base;
                 // 将 current_base 添加到表中
                 table.push(current_base);
-                // 更新 current_base，将其加上 base
-                current_base += &base;
             }
-            // 更新 base 为 current_base
-            base = current_base;
+            //2^(window_size-1)G+2^(window_size-1)G=2^(window_size)G
+            base = current_base + current_base;
         }
         // 返回预计算表
         table
@@ -61,76 +61,20 @@ impl WnafContext {
     ///
     /// Returns `None` if the table is too small.
 
-    pub fn mul_with_table1<G: Group>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
+
+    pub fn mul_with_table_old<G: Group>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
+        // 检查 base_table 是否太小
         if 1 << (self.window_size - 1) > base_table.len() {
             return None;
         }
 
-        /*let mut result = G::zero();
-
-        for i in 0..256 {
-            let a = base_table[i+i*2].clone();
-            let start = std::time::Instant::now();
-            result += a;
-            let d = start.elapsed();
-            println!("result took: (+ {:?} ns)", d.as_nanos());
-        }*/
-        // The modification principle comes from go-ipa(GitHub - crate-crypto/go-ipa: A Go implementation of cryptographic primitives for Verkle Trees)
-        //tt_record!("create index start");
-        let data = WnafContext::scalar_to_wnaf_data::<G>(scalar, self.window_size);
-
-        let mut c = 0;
-        let thr = 1 << (self.window_size - 1);
-        let mut result = G::zero();
-        //tt_record!("create index end");
-
-        //tt_record!("ecmul start");
-        for i in 0..data.len() {
-            let mut idx = (data[i] + c) as usize;
-            if idx == 0 {
-                continue;
-            }
-
-            c = 0;
-            if idx > thr {
-                idx = (1 << self.window_size) - idx;
-                if idx != 0 {
-                    //tt_record!("ecsub start");
-                    //let start = std::time::Instant::now();
-                    let a = base_table[idx - 1 + i * thr].clone();
-                    //let d = start.elapsed();
-                    //println!("precompute get took: (+ {:?} ns)", d.as_nanos());
-                    //let start = std::time::Instant::now();
-                    result -= a;
-                    //let d = start.elapsed();
-                    //println!("ecsub took: (+ {:?} ns)", d.as_nanos());
-                    //tt_record!("ecsub end");
-                }
-                c = 1;
-            } else {
-                //tt_record!("ecadd start");
-                let a = base_table[idx - 1 + i * thr];
-                //let start = std::time::Instant::now();
-                result += a;
-                //let d = start.elapsed();
-                //println!("ecadd took: (+ {:?} ns)", d.as_nanos());
-
-                //tt_record!("ecadd end");
-            }
-        }
-        //tt_record!("ecmul end");
-        Some(result)
-    }
-    pub fn mul_with_table<G: Group>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
-        if 1 << (self.window_size - 1) > base_table.len() {
-            return None;
-        }
-
-        let wnaf_data = WnafContext::scalar_to_wnaf_data::<G>(scalar, self.window_size);
+        // 将标量转换为 wNAF 数据
+        let wnaf_data = WnafContext::scalar_to_wnaf_data_old::<G>(scalar, self.window_size);
         let mut carry = 0;
         let threshold = 1 << (self.window_size - 1);
         let mut result = G::zero();
 
+        // 遍历 wNAF 数据
         for (i, &wnaf_value) in wnaf_data.iter().enumerate() {
             let mut index = (wnaf_value + carry) as usize;
             if index == 0 {
@@ -139,6 +83,7 @@ impl WnafContext {
 
             carry = 0;
             if index > threshold {
+                // 计算负索引并更新结果
                 index = (1 << self.window_size) - index;
                 if index != 0 {
                     let element = base_table[index - 1 + i * threshold].clone();
@@ -146,41 +91,128 @@ impl WnafContext {
                 }
                 carry = 1;
             } else {
+                // 计算正索引并更新结果
                 let element = base_table[index - 1 + i * threshold];
                 result += element;
             }
         }
 
+        // 返回结果
         Some(result)
     }
-    #[inline]
-    fn scalar_to_wnaf_data<G: Group>(scalar: &G::ScalarField, w: usize) -> Vec<u64> {
+    pub fn mul_with_table<G: Group>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
+        // 检查 base_table 是否太小
+        if 1 << (self.window_size - 1) > base_table.len() {
+            return None;
+        }
+
+        // 将标量转换为 wNAF 数据
+        let wnaf_data = WnafContext::scalar_to_wnaf_data::<G>(scalar, self.window_size);
+
+        let threshold = 1 << (self.window_size - 1);
+        let mut result = G::zero();
+        // 遍历 wNAF 数据
+        for (i, &wnaf_value) in wnaf_data.iter().enumerate() {
+            if wnaf_value < 0 {
+                let element = base_table[(-wnaf_value - 1) as usize + i * threshold];
+                result -= element;
+            } else {
+                // 计算正索引并更新结果
+                let element = base_table[(wnaf_value - 1) as usize + i * threshold];
+                result += element;
+            }
+        }
+        // 返回结果
+        Some(result)
+    }
+
+    fn scalar_to_wnaf_data_old<G: Group>(scalar: &G::ScalarField, w: usize) -> Vec<u64> {
+        // 将标量转换为 u64 向量，蒙哥马利域转为整数域
         let source = WnafContext::scalar_to_u64::<G>(scalar);
+        // mask用来异或取最低的w位
         let mask = (1 << w) - 1;
-        let mut data = vec![];
+        // 创建一个空向量来存储 wNAF 数据
+        let mut win_data = vec![];
+        // 初始化偏移量为窗口大小
         let mut off = w;
 
+        // 遍历源向量
         for i in 0..source.len() {
+            // 如果偏移量不等于窗口大小，更新数据向量的最后一个元素
             let s = if off != w {
                 let mask = (1 << (w - off)) - 1;
-                let j = data.len() - 1;
-                data[j] += (source[i] & mask) << off;
+                let j = win_data.len() - 1;
+                win_data[j] += (source[i] & mask) << off;
                 (source[i] >> (w - off), 64 - w + off)
             } else {
                 (source[i], 64)
             };
 
+            // 以窗口大小为步长遍历剩余的位
             for j in (0..s.1).step_by(w) {
+                // 提取窗口值并将其推入数据向量
                 let d = (s.0 >> j) & mask;
-                data.push(d);
+                win_data.push(d);
                 off = j;
             }
+            // 更新偏移量
+            off = s.1 - off;
+        }
+        win_data
+
+    }
+    fn scalar_to_wnaf_data<G: Group>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
+        // 将标量转换为 u64 向量，蒙哥马利域转为整数域
+        let source = WnafContext::scalar_to_u64::<G>(scalar);
+        // mask用来异或取最低的w位
+        let mask = (1 << w) - 1;
+        // 创建一个空向量来存储 wNAF 数据
+        let mut win_data = vec![];
+        // 初始化偏移量为窗口大小
+        let mut off = w;
+
+        // 遍历源向量
+        for i in 0..source.len() {
+            // 如果偏移量不等于窗口大小，更新数据向量的最后一个元素
+            let s = if off != w {
+                let mask = (1 << (w - off)) - 1;
+                let j = win_data.len() - 1;
+                win_data[j] += (source[i] & mask) << off;
+                (source[i] >> (w - off), 64 - w + off)
+            } else {
+                (source[i], 64)
+            };
+
+            // 以窗口大小为步长遍历剩余的位
+            for j in (0..s.1).step_by(w) {
+                // 提取窗口值并将其推入数据向量
+                let d = (s.0 >> j) & mask;
+                win_data.push(d);
+                off = j;
+            }
+            // 更新偏移量
             off = s.1 - off;
         }
 
+        // 把 win_data 变成 <i64>
+        let mut data: Vec<i64> = win_data.iter().map(|&x| x as i64).collect();
+        let threshold = 1 << (w - 1);
+
+        // 遍历 data，处理进位和负值
+        for i in 0..data.len() {
+            if data[i] >= threshold {
+                data[i] -= 1 << w;
+                if i + 1 < data.len() {
+                    data[i + 1] += 1;
+                } else {
+                    data.push(1);
+                }
+            }
+        }
+
+        // 返回 wNAF 数据向量
         data
     }
-
     #[inline]
     fn scalar_to_u64<G: Group>(scalar: &G::ScalarField) -> Vec<u64> {
         let b = scalar.into_bigint();

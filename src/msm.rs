@@ -173,7 +173,15 @@ mod tests {
 
         // Perform MSM using the precomputed WNAF method
         // 使用预计算的 WNAF 方法执行 MSM
+        use std::time::Instant;
+
+        let start = Instant::now();
+
+        // Perform the operation
         let precomp = MSMPrecompWnaf::new(&crs, 12);
+
+        let duration = start.elapsed();
+        println!("Time elapsed in MSMPrecompWnaf_new() is: {:?}", duration);
         let got_result = precomp.mul(&scalars);
         let got_par_result = precomp.mul_par(&scalars);
 

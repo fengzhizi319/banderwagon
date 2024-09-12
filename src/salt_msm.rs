@@ -109,16 +109,16 @@ impl WnafContext {
         // 将标量转换为 wNAF 数据
         let wnaf_data = WnafContext::scalar_to_wnaf_data::<G>(scalar, self.window_size);
 
-        let threshold = 1 << (self.window_size - 1);
+        let pre_comp_size = 1 << (self.window_size - 1);
         let mut result = G::zero();
         // 遍历 wNAF 数据
         for (i, &wnaf_value) in wnaf_data.iter().enumerate() {
             if wnaf_value < 0 {
-                let element = base_table[(-wnaf_value - 1) as usize + i * threshold];
+                let element = base_table[(-wnaf_value - 1) as usize + i * pre_comp_size];
                 result -= element;
             } else {
                 // 计算正索引并更新结果
-                let element = base_table[(wnaf_value - 1) as usize + i * threshold];
+                let element = base_table[(wnaf_value - 1) as usize + i * pre_comp_size];
                 result += element;
             }
         }

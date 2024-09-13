@@ -6,6 +6,7 @@ use ark_ed_on_bls12_381_bandersnatch::Fq;
 use ark_ff::BigInteger256;
 pub use element::{multi_scalar_mul, Element, Fr};
 pub mod salt_msm;
+pub mod msm_gotti;
 
 // Re-export arkworks traits that one may need to use in order to use
 // specific methods on field elements and for serialization.

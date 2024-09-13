@@ -218,6 +218,7 @@ impl Element {
     }
 
     pub fn prime_subgroup_generator() -> Element {
+        let a=EdwardsProjective::generator();
         Element(EdwardsProjective::generator())
     }
 

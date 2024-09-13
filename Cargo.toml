@@ -14,6 +14,8 @@ ark-std = { version = "^0.4.0", default-features = false }
 rayon = "*"
 rand_chacha = "0.3.1"
 sha2 = "0.11.0-pre.4"
+tokio = "1.40.0"
+num_cpus = "1.16.0"
 #timetrace-ffi = { git = "ssh://git@github.com/megaeth-labs/timetrace-ffi" }
 [dev-dependencies]
 hex = "0.4.3"

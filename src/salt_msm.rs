@@ -1,9 +1,11 @@
 use ark_ec::Group;
-use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective, Fr};
+use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective;
+//use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective, Fr};
 use ark_ff::{BigInteger, PrimeField};
 use ark_std::vec::Vec;
 use crate::Element;
-use crate::msm_gotti::MSMPrecompWnafGotti;
+use crate::element::ExtendPoint;
+//use crate::msm_gotti::MSMPrecompWnafGotti;
 
 /// A helper type that contains all the context required for computing
 /// a window NAF multiplication of a group element by a scalar.
@@ -266,9 +268,12 @@ impl WnafGottiContext {
             table[l / 2 + i] = table[i] + basis[0];
         }
     }
+    pub fn extend_table(&self, base: EdwardsProjective) -> Vec<ExtendPoint> {
+        Element::batch_extended_point_normalized(&self.table(base))
+    }
 
     //pub fn table<G: Group>(&self,mut base: G) -> Vec<G>
-    pub fn table<G: Group>(&self,mut base: G)-> Vec<G> {
+    pub fn table<G: Group>(&self,base: G)-> Vec<G> {
 
         let fr_bits =253;
         //b为窗口bit长度，t为预处理的倍数，window_size为每个窗口内的值的所有可能的值
@@ -279,21 +284,21 @@ impl WnafGottiContext {
         let points_per_column = (fr_bits + self.t - 1) / self.t as usize;
         //窗口的个数
         let window_count = (points_per_column + self.b - 1) / self.b; // 等价于 ceil(256 / self.window_size)
-        let table_size = window_count * (1 << (self.b - 1));
-        //let mut table: [G; table_size] = [G::zero(); table_size];
-        let threshold = 1 << (self.b - 1);
-        //println!("threshold: {:?}", threshold);
+        //let table_size = window_count * (1 << (self.b - 1));
+        //let threshold = 1 << (self.b - 1);
         let mut table_basis = Vec::with_capacity(points_per_column);
         let mut dbl = base.clone();
         table_basis.push(base);
 
         for _i in 1..(points_per_column) {
-            for j in 0..self.t {
+            for _j in 0..self.t {
                 dbl= dbl.double();
             }
             table_basis.push(dbl.clone());
             //println!("threshold: {:?}", table_basis[i]);
         }
+        let mut nn_table = vec![G::zero(); window_count * window_size];
+
         for i in 0..window_count {
             let w=i;
             let start = w * self.b as usize;
@@ -302,43 +307,18 @@ impl WnafGottiContext {
                 end = table_basis.len();
             }
             let window_basis: &mut [G] = &mut table_basis[start..end];
-
-            //let mut table: Vec<G> = Vec::with_capacity(window_size);
-            // let slice: &mut [G] = &mut table[0..4];
-
-            let mut table=Vec::with_capacity(window_size);
-
+            let mut table = vec![G::zero(); window_size];
+            //let table_slice: &mut [G] = table.as_mut_slice();
             self.fill_window(window_basis, &mut *table);
+            //let table_normalized = Element::batch_extended_point_normalized(&table);
+
+            for (j, table_element) in table.into_iter().enumerate() {
+                nn_table[w * window_size + j] = table_element;
+            }
         }
 
-
-
-
-
-
-
-
-
-        //
-        // for _ in 0..window_count {
-        //     // 初始化 current_base 为 base
-        //     let mut current_base = base;
-        //     // 遍历窗口中的元素,table中为G,2G,3G,...,2^(window_size-1)G
-        //     table.push(current_base);
-        //     for _ in 1..threshold {
-        //         current_base += &base;
-        //         current_base += &base; // Skip one element
-        //         // 将 current_base 添加到表中
-        //         table.push(current_base);
-        //     }
-        //     //2^(window_size-1)G+2^(window_size-1)G=2^(window_size)G
-        //     base = current_base + current_base;
-        //     //current_base.double();
-        // }
-        table_basis
-
-
-    }
+        nn_table
+  }
 
     /// Computes scalar multiplication of a group element `g` by `scalar`.
     ///

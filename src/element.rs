@@ -43,8 +43,79 @@ impl PartialEq for Element {
         (x1 * y2) == (x2 * y1)
     }
 }
+#[derive(Clone, Debug, Default)]
+pub struct ExtendPoint {
+    pub x: Fq,
+    pub y: Fq,
+    pub t: Fq,
+}
 
 impl Element {
+    pub fn batch_extended_point_normalized(points: &[EdwardsProjective]) -> Vec<ExtendPoint> {
+        let mut result = vec![ExtendPoint::default(); points.len()];
+        //let mut zi_mul = vec![<BandersnatchConfig as CurveConfig>::BaseField::ZERO; points.len()];
+        let mut zeroes = vec![false; points.len()];
+        //accumulator := fp.One()
+        let mut accumulator = <BandersnatchConfig as CurveConfig>::BaseField::ONE;
+        //println!("accumulator: {:?}", points.len());
+
+        // batch invert all points[].Z coordinates with Montgomery batch inversion trick
+        // (stores points[].Z^-1 in result[i].X to avoid allocating a slice of fr.Elements)
+        for i in 0..points.len() {
+            if points[i].z.is_zero() {
+                zeroes[i] = true;
+                continue
+            }
+
+            result[i].x = accumulator;
+            accumulator = accumulator * &points[i].z;
+            //accumulator.Mul(&accumulator, &points[i].Z)
+        }
+
+        //var accInverse fp.Element
+        //accInverse.Inverse(&accumulator)
+        let mut acc_inv = accumulator.inverse().unwrap();
+
+        //for i := len(points) - 1; i >= 0; i-- {
+        for i in (0..points.len()).rev() {
+            if zeroes[i] {
+                // do nothing, (X=0, Y=0) is infinity point in affine
+                continue
+            }
+            //result[i].X.Mul(&result[i].X, &accInverse)
+            result[i].x = result[i].x * &acc_inv;
+            //accInverse.Mul(&accInverse, &points[i].Z)
+            acc_inv = acc_inv * &points[i].z;
+            //println!("acc_inv {}: {:?}", i,acc_inv.0.0);
+        }
+
+        // batch convert to affine.
+
+        //for i := 0; i < len(points); i++ {
+        for i in 0..points.len() {
+            if zeroes[i] {
+                // do nothing, (X=0, Y=0) is infinity point in affine
+                continue
+            }
+
+            //a := result[i].X
+            let a = result[i].x;
+            result[i].x = points[i].x * &a;
+            //result[i].X.Mul(&points[i].X, &a)
+            result[i].y = points[i].y * &a;
+            //result[i].Y.Mul(&points[i].Y, &a)
+            result[i].t = result[i].x * &result[i].y;
+            //result[i].T.Mul(&result[i].X, &result[i].Y)
+            //println!("ExtendedPoint[ {} ]: {:?} {:?} {:?}", i, result[i].x.0.0, result[i].y.0.0, result[i].t.0.0);
+        }
+
+        //panic!("-------");
+
+        result
+
+
+        //return result
+    }
 
     /// 将 `Element` 序列化为字节数组。
     ///
@@ -218,7 +289,7 @@ impl Element {
     }
 
     pub fn prime_subgroup_generator() -> Element {
-        let a=EdwardsProjective::generator();
+        //let a=EdwardsProjective::generator();
         Element(EdwardsProjective::generator())
     }
 

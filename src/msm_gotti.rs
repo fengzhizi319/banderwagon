@@ -1,105 +1,81 @@
-use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective, Fr};
-use ark_ff::Zero;
+use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective};
+//use ark_ff::Zero;
 use rayon::prelude::*;
 use ark_ec::Group;
-use ark_ff::{BigInteger, PrimeField};
+//use ark_ff::{BigInteger, PrimeField};
 use ark_std::vec::Vec;
 use crate::Element;
 use crate::salt_msm::WnafGottiContext;
 #[derive(Clone, Debug)]
 pub struct MSMPrecompWnafGotti {
+    tables: Vec<Vec<EdwardsProjective>>,
     t:         usize,
     b:        usize,
-    tables: Vec<Vec<EdwardsProjective>>,
 }
 
 impl MSMPrecompWnafGotti {
-    pub fn table<G: Group>(mut base: G,t: usize, b: usize) -> Vec<G> {
-
-        let fr_bits =253;
-        //b为窗口bit长度，t为预处理的倍数，window_size为每个窗口内的值的所有可能的值
-        let window_size = 1 << b;
-        //用t把标量分为t个部分，如果t=2，那么标量分为2部分，每部分的位数为fr_bits/2，kP=2A1+A0，
-        // A1为高位，A0为低位，A1，A0即为划分出来的部分。A1、A0的所有可能的个数为points_per_column，
-        // 如t=2，b=5，那么points_per_column=127
-        let points_per_column = (fr_bits + t - 1) / t as usize;
-        //窗口的个数
-        let window_count = (points_per_column + b - 1) / b; // 等价于 ceil(256 / self.window_size)
-        let table_size = window_count * (1 << (b - 1));
-        let mut table = Vec::with_capacity(table_size);
-        let threshold = 1 << (b - 1);
-        println!("threshold: {:?}", threshold);
-        for _ in 0..window_count {
-            // 初始化 current_base 为 base
-            let mut current_base = base;
-            // 遍历窗口中的元素,table中为G,2G,3G,...,2^(window_size-1)G
-            table.push(current_base);
-            for _ in 1..threshold {
-                current_base += &base;
-                current_base += &base; // Skip one element
-                // 将 current_base 添加到表中
-                table.push(current_base);
+    pub fn fill_window<G: Group>(basis: &mut [G], table: &mut [G]) {
+        // 如果 basis 数组为空
+        if basis.is_empty() {
+            // 将 table 数组填充为零元素
+            for i in 0..table.len() {
+                table[i] = G::zero();
             }
-            //2^(window_size-1)G+2^(window_size-1)G=2^(window_size)G
-            base = current_base + current_base;
+            return;
         }
-        table
+        let l = table.len();
+        // 递归调用 fill_window，传入去掉第一个元素的 basis 数组和 table 数组的前半部分
+        Self::fill_window(&mut basis[1..], &mut table[.. l/ 2]);
+        // 遍历 table 数组的前半部分
+        for i in 0..l / 2 {
+            // 将 table 数组后半部分的对应元素设置为当前元素与 basis 数组第一个元素的和
+            table[l / 2 + i] = table[i] + basis[0];
+        }
     }
-    //b为窗口大小，t为预处理的倍数
-    //pub  fn new(basis: &[Element], t: usize, b: usize) -> MSMPrecompWnafGotti {
-    pub  fn new1(basis: &[Element], t: usize, window_size: usize) {
-        //每个标量的位数
-        let fr_bits =253;
-        //b为窗口大小，t为预处理的倍数，window_size为每个窗口内的值的所有可能的值
-        let window_size = 1 << window_size;
-        //用t把标量分为t个部分，如果t=2，那么标量分为2部分，每部分的位数为fr_bits/2，kP=2A1+A0，
-        // A1为高位，A0为低位，A1，A0即为划分出来的部分。A1、A0的所有可能的个数为points_per_column，
-        // 如t=2，b=5，那么points_per_column=127
+
+    pub fn table<G: Group>(mut bases: Vec<G>, t: usize, b: usize) -> Vec<Vec<G>> {
+        let fr_bits = 253;
+        let window_size = 1 << b;
         let points_per_column = (fr_bits + t - 1) / t as usize;
-        //窗口的个数
-        let window_size = (points_per_column * basis.len() + window_size as usize - 1) / window_size as usize;
-        let window_count = (256 + window_size - 1) / window_size; // 等价于 ceil(256 / self.window_size)
-        let table_size = window_count * (1 << (window_size - 1));
-        // let mut table = Vec::with_capacity(table_size);
-        // let threshold = 1 << (window_size - 1);
-        // println!("threshold: {:?}", threshold);
+        let window_count = (points_per_column + b - 1) / b;
 
-        // let mut table_basis = vec![bandersnatch::PointExtended::default(); points_per_column * basis.len()];
-        //
-        // let mut basis_extended = vec![bandersnatch::PointExtended::default(); basis.len()];
-        // for (i, elem) in basis.iter().enumerate() {
-        //     basis_extended[i] = bandersnatch::PointExtended::from_proj(&elem.inner);
-        // }
-        // let mut idx = 0;
-        // for hi in 0..basis_extended.len() {
-        //     table_basis[idx] = basis_extended[hi];
-        //     idx += 1;
-        //     for _ in 1..points_per_column {
-        //         table_basis[idx] = table_basis[idx - 1];
-        //         for _ in 0..t {
-        //             table_basis[idx].double(&table_basis[idx]);
-        //         }
-        //         idx += 1;
-        //     }
-        // }
-        // let mut nn_table = vec![bandersnatch::PointExtendedNormalized::default(); window_size * num_windows];
-        // for w in 0..num_windows {
-        //     let start = w * b as usize;
-        //     let mut end = (w + 1) * b as usize;
-        //     if end > table_basis.len() {
-        //         end = table_basis.len();
-        //     }
-        //     let window_basis = &table_basis[start..end];
-        //
-        //     let mut table = vec![bandersnatch::PointExtended::default(); window_size];
-        //     fill_window(window_basis, &mut table);
-        //     let table_normalized = batch_to_extended_point_normalized(&table);
-        //     for i in 0..window_size {
-        //         nn_table[w * window_size + i] = table_normalized[i].clone();
-        //     }
-        // }
+        let mut final_nn_table = Vec::new();
 
+        for base in bases.iter_mut() {
+            let mut table_basis = Vec::with_capacity(points_per_column);
+            let mut dbl = base.clone();
+            table_basis.push(base.clone());
+
+            for _i in 1..points_per_column {
+                for _j in 0..t {
+                    dbl = dbl.double();
+                }
+                table_basis.push(dbl.clone());
+            }
+
+            let mut nn_table = vec![G::zero(); window_count * window_size];
+            for i in 0..window_count {
+                let w = i;
+                let start = w * b as usize;
+                let mut end = (w + 1) * b as usize;
+                if end > table_basis.len() {
+                    end = table_basis.len();
+                }
+                let window_basis: &mut [G] = &mut table_basis[start..end];
+                let mut table = vec![G::zero(); window_size];
+                Self::fill_window(window_basis, &mut *table);
+
+                for (j, table_element) in table.into_iter().enumerate() {
+                    nn_table[w * window_size + j] = table_element;
+                }
+            }
+
+            final_nn_table.push(nn_table);
+        }
+
+        final_nn_table
     }
+
     pub fn new(basis: &[Element], t: usize, b: usize)-> MSMPrecompWnafGotti {
         let wnaf_gotti_context = WnafGottiContext::new(t,b);
 
@@ -115,11 +91,13 @@ impl MSMPrecompWnafGotti {
     }
 }
 
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{multi_scalar_mul, Element};
-    use crate::{try_reduce_to_element, msm_gotti::MSMPrecompWnafGotti, Fr};
+    use crate::{msm_gotti::MSMPrecompWnafGotti, Fr};
 
     #[test]
     fn testmain(){
@@ -150,26 +128,22 @@ mod tests {
         for i in 0..256 {
             basic_g.push(Element::prime_subgroup_generator() * Fr::from((i + 1) as u64));
         }
-
         // Create a vector of 256 scalars, each being the negative of the corresponding index + 1
         // 创建一个包含 256 个标量的向量，每个标量都是相应索引 + 1 的负数
         let mut scalars = vec![];
         for i in 0..256 {
             scalars.push(-Fr::from(i + 1));
         }
-
         // Perform MSM using the standard method
         // 使用标准方法执行 MSM
-        let result = multi_scalar_mul(&basic_g, &scalars);
-
+        let _result = multi_scalar_mul(&basic_g, &scalars);
         // Perform MSM using the precomputed WNAF method
         // 使用预计算的 WNAF 方法执行 MSM
-        use std::time::Instant;
-
-        let start = Instant::now();
+        //use std::time::Instant;
+        //let start = Instant::now();
 
         // Perform the operation
-        let precomp = MSMPrecompWnafGotti::new(&basic_g, 2,4);
+        let _precomp = MSMPrecompWnafGotti::new(&basic_g, 2,4);
 
         // let duration = start.elapsed();
         // println!("Time elapsed in MSMPrecompWnaf_new() is: {:?}", duration);
@@ -190,7 +164,34 @@ mod tests {
         basic_g.push(Element::prime_subgroup_generator() * Fr::from(1));
 
         // Perform the operation
-        let precompute = MSMPrecompWnafGotti::table(basic_g[0].0, 2,5);
+        let precompute=MSMPrecompWnafGotti::new(&basic_g, 2,8);
+        let x= Element::batch_extended_point_normalized(&*precompute.tables[0].clone());
+        println!("precompute: {:?}", x.len());
+
+    }
+    #[test]
+    fn correctness_precompute_one_table_test1() {
+        // Create a vector of 256 elements, each being a multiple of the prime subgroup generator
+        // 创建一个包含 256 个元素的向量，每个元素都是素数子群生成元的倍数
+        let mut basic_g = Vec::with_capacity(2);
+        for i in 0..2 {
+            basic_g.push(Element::prime_subgroup_generator() * Fr::from((i + 1) as u64));
+        }
+        //
+        // let mut basic_g = Vec::with_capacity(1);
+        //
+        // basic_g.push(Element::prime_subgroup_generator() * Fr::from(1));
+
+        // Perform the operation
+        let basic: Vec<_> = basic_g.par_iter().map(|base| base.0).collect();
+        let precompute_table = MSMPrecompWnafGotti::table(basic, 2, 8);
+        //basic_g.0
+        let precompute=MSMPrecompWnafGotti::new(&basic_g, 2,8);
+        println!("precompute: {:?}", precompute_table.len());
+        let x= Element::batch_extended_point_normalized(&*precompute.tables[0].clone());
+        println!("precompute: {:?}", x.len());
+        assert_eq!(precompute_table, precompute.tables);
+        //let mut scalars = vec![];
 
     }
 }

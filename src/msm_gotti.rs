@@ -177,10 +177,6 @@ mod tests {
         for i in 0..2 {
             basic_g.push(Element::prime_subgroup_generator() * Fr::from((i + 1) as u64));
         }
-        //
-        // let mut basic_g = Vec::with_capacity(1);
-        //
-        // basic_g.push(Element::prime_subgroup_generator() * Fr::from(1));
 
         // Perform the operation
         let basic: Vec<_> = basic_g.par_iter().map(|base| base.0).collect();

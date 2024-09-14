@@ -268,9 +268,6 @@ impl WnafGottiContext {
             table[l / 2 + i] = table[i] + basis[0];
         }
     }
-    pub fn extend_table(&self, base: EdwardsProjective) -> Vec<ExtendPoint> {
-        Element::batch_extended_point_normalized(&self.table(base))
-    }
 
     //pub fn table<G: Group>(&self,mut base: G) -> Vec<G>
     pub fn table<G: Group>(&self,base: G)-> Vec<G> {

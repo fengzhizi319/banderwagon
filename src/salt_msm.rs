@@ -362,6 +362,27 @@ impl WnafGottiContext {
         // 返回结果
         Some(result)
     }
+    pub fn mul_with_table_gotti<G: Group>(&self, base_table: &[G], scalar: &G::ScalarField) {
+        // 检查 base_table 是否太小
+        if 1 << (self.b - 1) > base_table.len() {
+            //return None;
+        }
+        // 将标量转换为 wNAF 数据
+        let source = WnafGottiContext::scalar_to_u64::<G>(scalar);
+        let window_size = 1 << self.b;
+        let mut accum = G::zero();
+        let mut add_double_count = 0;
+        for t_i in 0..self.t {
+            if t_i > 0 {
+                accum=accum.double();
+                add_double_count += 1;
+            }
+
+            let mut curr_window = 0;
+            let mut window_scalar = 0;
+            let mut window_bit_pos = 0;
+        }
+    }
 
     fn scalar_to_wnaf_data<G: Group>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
         // 将标量转换为 u64 向量，蒙哥马利域转为整数域

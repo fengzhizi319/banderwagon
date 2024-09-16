@@ -1,10 +1,10 @@
 use ark_ec::Group;
-use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective;
+//use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective;
 //use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective, Fr};
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::{BigInteger, PrimeField, Zero};
 use ark_std::vec::Vec;
 use crate::Element;
-use crate::element::ExtendPoint;
+//use crate::element::ExtendPoint;
 //use crate::msm_gotti::MSMPrecompWnafGotti;
 
 /// A helper type that contains all the context required for computing
@@ -315,7 +315,7 @@ impl WnafGottiContext {
         }
 
         nn_table
-  }
+    }
 
     /// Computes scalar multiplication of a group element `g` by `scalar`.
     ///
@@ -362,13 +362,14 @@ impl WnafGottiContext {
         // 返回结果
         Some(result)
     }
-    pub fn mul_with_table_gotti<G: Group>(&self, base_table: &[G], scalar: &G::ScalarField) {
+    pub fn mul_with_table_gotti<G: Group>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField)-> Option<G> {
         // 检查 base_table 是否太小
-        if 1 << (self.b - 1) > base_table.len() {
-            //return None;
-        }
+        // if 1 << (self.b - 1) > base_pre_table.len() {
+        //     //return None;
+        // }
         // 将标量转换为 wNAF 数据
-        let source = WnafGottiContext::scalar_to_u64::<G>(scalar);
+        //let scalar = mon_scalar.into_bigint();
+        //let source = WnafGottiContext::scalar_to_u64::<G>(scalar);
         let window_size = 1 << self.b;
         let mut accum = G::zero();
         let mut add_double_count = 0;
@@ -381,62 +382,58 @@ impl WnafGottiContext {
             let mut curr_window = 0;
             let mut window_scalar = 0;
             let mut window_bit_pos = 0;
-        }
-    }
+            let fr_bits = 253;
+            let scalar_u64 = WnafGottiContext::scalar_to_u64::<G>(mon_scalar);
+            //let scalar_u64 = crate::salt_msm::WnafContext::scalar_to_wnaf_data::<G>(scalar, self.b);
 
-    fn scalar_to_wnaf_data<G: Group>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
-        // 将标量转换为 u64 向量，蒙哥马利域转为整数域
-        let source = crate::salt_msm::WnafContext::scalar_to_u64::<G>(scalar);
-        // mask用来异或取最低的w位
-        let mask = (1 << w) - 1;
-        // 创建一个空向量来存储 wNAF 数据
-        let mut win_data = vec![];
-        // 初始化偏移量为窗口大小
-        let mut off = w;
-
-        // 遍历源向量
-        for i in 0..source.len() {
-            // 如果偏移量不等于窗口大小，更新数据向量的最后一个元素
-            let s = if off != w {
-                let mask = (1 << (w - off)) - 1;
-                let j = win_data.len() - 1;
-                win_data[j] += (source[i] & mask) << off;
-                (source[i] >> (w - off), 64 - w + off)
-            } else {
-                (source[i], 64)
-            };
-
-            // 以窗口大小为步长遍历剩余的位
-            for j in (0..s.1).step_by(w) {
-                // 提取窗口值并将其推入数据向量
-                let d = (s.0 >> j) & mask;
-                win_data.push(d);
-                off = j;
-            }
-            // 更新偏移量
-            off = s.1 - off;
-        }
-
-        // 把 win_data 变成 <i64>
-        let mut data: Vec<i64> = win_data.iter().map(|&x| x as i64).collect();
-        let threshold = 1 << (w - 1);
-
-        // 遍历 data，处理进位和负值
-        for i in 0..data.len() {
-            if data[i] >= threshold {
-                data[i] -= 1 << w;
-                if i + 1 < data.len() {
-                    data[i + 1] += 1;
-                } else {
-                    data.push(1);
+            let mut k: usize = 0;
+            while k < fr_bits {
+                let scalar_bit_pos = (k + self.t - t_i - 1) as usize;
+                if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
+                    let limb = scalar_u64[scalar_bit_pos >> 6];
+                    let bit = (limb >> (scalar_bit_pos & 63)) & 1;
+                    window_scalar |= (bit as usize) << (self.b as usize - window_bit_pos - 1);
                 }
+
+                window_bit_pos += 1;
+                if window_bit_pos == self.b {
+                    if window_scalar > 0 {
+                        // let t1 = std::time::Instant::now();
+                        // let jiange = t2.elapsed(); // 计算函数执行时间
+
+                        let window_precomp = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
+                        //let t2 = std::time::Instant::now();
+                        let a = window_precomp[window_scalar];
+                        //let takedata = t2.elapsed(); // 计算函数执行时间
+                        // let t1 = std::time::Instant::now();
+                        // let jiange = t2.elapsed(); // 计算函数执行时间
+                        accum+=a;
+                        // let add_time = t1.elapsed(); // 计算函数执行时间
+                        // println!("add time: {:?}", add_time);
+                        //println!("takedata time: {:?}", takedata);
+                        // println!("间隔为: {:?}", jiange);
+                        // t2 = std::time::Instant::now();
+                        add_double_count += 1;
+                    }
+                    curr_window += 1;
+
+                    window_scalar = 0;
+                    window_bit_pos = 0;
+                }
+                k += self.t;
             }
+            if window_scalar > 0 {
+                let window_slice = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
+                accum+=window_slice[window_scalar];
+                add_double_count += 1;
+            }
+
         }
 
-        // 返回 wNAF 数据向量
-        data
+
+        return Some(accum);
     }
-    #[inline]
+
     fn scalar_to_u64<G: Group>(scalar: &G::ScalarField) -> Vec<u64> {
         let b = scalar.into_bigint();
         let mut num = b.num_bits();

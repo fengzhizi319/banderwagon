@@ -1,4 +1,4 @@
-use ark_ec::Group;
+use ark_ec::CurveGroup;
 //use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective;
 //use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective, Fr};
 use ark_ff::{BigInteger, PrimeField, Zero};
@@ -8,7 +8,7 @@ use crate::Element;
 //use crate::msm_gotti::MSMPrecompWnafGotti;
 
 /// A helper type that contains all the context required for computing
-/// a window NAF multiplication of a group element by a scalar.
+/// a window NAF multiplication of a CurveGroup element by a scalar.
 pub struct WnafContext {
     pub window_size: usize,
 }
@@ -25,7 +25,7 @@ impl WnafContext {
         Self { window_size }
     }
 
-    pub fn table<G: Group>(&self, mut base: G) -> Vec<G> {
+    pub fn table<G: CurveGroup>(&self, mut base: G) -> Vec<G> {
         let window_count = (256 + self.window_size - 1) / self.window_size; // 等价于 ceil(256 / self.window_size)
         let table_size = window_count * (1 << (self.window_size - 1));
         let mut table = Vec::with_capacity(table_size);
@@ -48,26 +48,26 @@ impl WnafContext {
         table
     }
 
-    /// Computes scalar multiplication of a group element `g` by `scalar`.
+    /// Computes scalar multiplication of a CurveGroup element `g` by `scalar`.
     ///
     /// This method uses the wNAF algorithm to perform the scalar
     /// multiplication; first, it uses `Self::table` to calculate an
     /// appropriate table of multiples of `g`, and then uses the wNAF
     /// algorithm to compute the scalar multiple.
-    pub fn mul<G: Group>(&self, g: G, scalar: &G::ScalarField) -> G {
+    pub fn mul<G: CurveGroup>(&self, g: G, scalar: &G::ScalarField) -> G {
         let table = self.table(g);
         self.mul_with_table(&table, scalar).unwrap()
     }
 
-    /// Computes scalar multiplication of a group element by `scalar`.
-    /// `base_table` holds precomputed multiples of the group element; it can be
+    /// Computes scalar multiplication of a CurveGroup element by `scalar`.
+    /// `base_table` holds precomputed multiples of the CurveGroup element; it can be
     /// generated using `Self::table`. `scalar` is an element of
     /// `G::ScalarField`.
     ///
     /// Returns `None` if the table is too small.
 
 
-    pub fn mul_with_table_old<G: Group>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
+    pub fn mul_with_table_old<G: CurveGroup>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
         // 检查 base_table 是否太小
         if 1 << (self.window_size - 1) > base_table.len() {
             return None;
@@ -105,7 +105,7 @@ impl WnafContext {
         // 返回结果
         Some(result)
     }
-    pub fn mul_with_table<G: Group>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
+    pub fn mul_with_table<G: CurveGroup>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
         // 检查 base_table 是否太小
         if 1 << (self.window_size - 1) > base_table.len() {
             return None;
@@ -131,7 +131,7 @@ impl WnafContext {
         Some(result)
     }
 
-    fn scalar_to_wnaf_data_old<G: Group>(scalar: &G::ScalarField, w: usize) -> Vec<u64> {
+    fn scalar_to_wnaf_data_old<G: CurveGroup>(scalar: &G::ScalarField, w: usize) -> Vec<u64> {
         // 将标量转换为 u64 向量，蒙哥马利域转为整数域
         let source = WnafContext::scalar_to_u64::<G>(scalar);
         // mask用来异或取最低的w位
@@ -166,7 +166,7 @@ impl WnafContext {
         win_data
 
     }
-    fn scalar_to_wnaf_data<G: Group>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
+    fn scalar_to_wnaf_data<G: CurveGroup>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
         // 将标量转换为 u64 向量，蒙哥马利域转为整数域
         let source = WnafContext::scalar_to_u64::<G>(scalar);
         // mask用来异或取最低的w位
@@ -219,7 +219,7 @@ impl WnafContext {
         data
     }
     #[inline]
-    fn scalar_to_u64<G: Group>(scalar: &G::ScalarField) -> Vec<u64> {
+    fn scalar_to_u64<G: CurveGroup>(scalar: &G::ScalarField) -> Vec<u64> {
         let b = scalar.into_bigint();
         let mut num = b.num_bits();
         num = if num & 63 == 0 {
@@ -250,7 +250,7 @@ impl WnafGottiContext {
         assert!(b < 64);
         Self { t,b }
     }
-    fn fill_window<G: Group>(&self, basis: &mut [G], table: &mut [G]) {
+    fn fill_window<G: CurveGroup>(&self, basis: &mut [G], table: &mut [G]) {
         // 如果 basis 数组为空
         if basis.is_empty() {
             // 将 table 数组填充为零元素
@@ -269,8 +269,8 @@ impl WnafGottiContext {
         }
     }
 
-    //pub fn table<G: Group>(&self,mut base: G) -> Vec<G>
-    pub fn table<G: Group>(&self,base: G)-> Vec<G> {
+    //pub fn table<G: CurveGroup>(&self,mut base: G) -> Vec<G>
+    pub fn table<G: CurveGroup>(&self,base: G)-> Vec<G> {
 
         let fr_bits =253;
         //b为窗口bit长度，t为预处理的倍数，window_size为每个窗口内的值的所有可能的值
@@ -317,19 +317,19 @@ impl WnafGottiContext {
         nn_table
     }
 
-    /// Computes scalar multiplication of a group element `g` by `scalar`.
+    /// Computes scalar multiplication of a CurveGroup element `g` by `scalar`.
     ///
     /// This method uses the wNAF algorithm to perform the scalar
     /// multiplication; first, it uses `Self::table` to calculate an
     /// appropriate table of multiples of `g`, and then uses the wNAF
     /// algorithm to compute the scalar multiple.
-    pub fn mul<G: Group>(&self, g: G, scalar: &G::ScalarField) -> G {
+    pub fn mul<G: CurveGroup>(&self, g: G, scalar: &G::ScalarField) -> G {
         let table = self.table(g);
         self.mul_with_table(&table, scalar).unwrap()
     }
 
-    /// Computes scalar multiplication of a group element by `scalar`.
-    /// `base_table` holds precomputed multiples of the group element; it can be
+    /// Computes scalar multiplication of a CurveGroup element by `scalar`.
+    /// `base_table` holds precomputed multiples of the CurveGroup element; it can be
     /// generated using `Self::table`. `scalar` is an element of
     /// `G::ScalarField`.
     ///
@@ -337,7 +337,7 @@ impl WnafGottiContext {
 
 
 
-    pub fn mul_with_table<G: Group>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
+    pub fn mul_with_table<G: CurveGroup>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
         // 检查 base_table 是否太小
         if 1 << (self.b - 1) > base_table.len() {
             return None;
@@ -362,7 +362,7 @@ impl WnafGottiContext {
         // 返回结果
         Some(result)
     }
-    pub fn mul_with_table_gotti<G: Group>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField)-> Option<G> {
+    pub fn mul_with_table_gotti<G: CurveGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField)-> Option<G> {
         // 检查 base_table 是否太小
         // if 1 << (self.b - 1) > base_pre_table.len() {
         //     //return None;
@@ -434,7 +434,7 @@ impl WnafGottiContext {
         return Some(accum);
     }
 
-    fn scalar_to_u64<G: Group>(scalar: &G::ScalarField) -> Vec<u64> {
+    fn scalar_to_u64<G: CurveGroup>(scalar: &G::ScalarField) -> Vec<u64> {
         let b = scalar.into_bigint();
         let mut num = b.num_bits();
         num = if num & 63 == 0 {

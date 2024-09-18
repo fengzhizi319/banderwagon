@@ -1,7 +1,7 @@
-use ark_ec::{twisted_edwards::TECurveConfig, Group, ScalarMul, VariableBaseMSM};
+use ark_ec::{twisted_edwards::TECurveConfig, PrimeGroup, ScalarMul, VariableBaseMSM};
 use ark_ec::{CurveConfig, twisted_edwards::Affine};
 use ark_ed_on_bls12_381_bandersnatch::{BandersnatchConfig, EdwardsAffine, EdwardsProjective, Fq};
-use ark_ff::{batch_inversion, Field, One, Zero};
+use ark_ff::{batch_inversion, AdditiveGroup, Field, One, Zero};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 pub use ark_ed_on_bls12_381_bandersnatch::Fr;

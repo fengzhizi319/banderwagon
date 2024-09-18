@@ -1,7 +1,7 @@
 use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective, Fr};
 use ark_ff::Zero;
 use rayon::prelude::*;
-use ark_ec::Group;
+use ark_ec::CurveGroup;
 //use ark_ff::{BigInteger, PrimeField};
 use ark_std::vec::Vec;
 use crate::Element;
@@ -14,7 +14,7 @@ pub struct MSMPrecompWnafGotti {
 }
 
 impl MSMPrecompWnafGotti {
-    pub fn fill_window<G: Group>(basis: &mut [G], table: &mut [G]) {
+    pub fn fill_window<G: CurveGroup>(basis: &mut [G], table: &mut [G]) {
         // 如果 basis 数组为空
         if basis.is_empty() {
             // 将 table 数组填充为零元素
@@ -33,7 +33,7 @@ impl MSMPrecompWnafGotti {
         }
     }
 
-    pub fn table<G: Group>(mut bases: Vec<G>, t: usize, b: usize) -> Vec<Vec<G>> {
+    pub fn table<G: CurveGroup>(mut bases: Vec<G>, t: usize, b: usize) -> Vec<Vec<G>> {
         let fr_bits = 253;
         let window_size = 1 << b;
         let points_per_column = (fr_bits + t - 1) / t as usize;
@@ -228,7 +228,7 @@ mod tests {
         let start = Instant::now();
         let got_result = precompute.mul(&scalars);
         let duration = start.elapsed();
-        println!("Time elapsed in MSMPrecompWnaf_new() is: {:?}", duration);
+        println!("Time elapsed in mul is: {:?}", duration);
 
         let affine_result= got_result.0.into_affine();
         let string_x="33549696307925229982445904590536874618633472405590028303463218160177641247209";

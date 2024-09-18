@@ -223,7 +223,7 @@ mod tests {
         scalars.push(Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap());
         println!("scalars1: {:?}", scalars1.to_string());
 
-        let precompute=MSMPrecompWnafGotti::new(&basic_crs, 2,10);
+        let precompute=MSMPrecompWnafGotti::new(&basic_crs, 1,4);
         let precompute_size = std::mem::size_of_val(&precompute.tables);
         let mem_byte_size=precompute.tables.len()*precompute.tables[0].len()*4*32;
         println!("precompute_size: {:?}", mem_byte_size);

@@ -14,8 +14,8 @@ fn benchmark_precompute_mul(c: &mut Criterion) {
     let scalars = vec![
         Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap()
     ];
-    let ts=[4];
-    let bs=[8,9,10,11,12,13,14,15,16];
+    let ts=[2];
+    let bs=[8,10,12,16];
 
     for &t in &ts {
         for &b in &bs {
@@ -42,7 +42,7 @@ fn benchmark_std_precompute_mul(c: &mut Criterion) {
     let scalars = vec![
         Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap()
     ];
-    let windows=[8,9,10,11,12,13,14,15,16];
+    let windows=[8,10,12,16];
 
     for &window in &windows {
         let precompute = MSMPrecompWnaf::new(&basic_crs, window);

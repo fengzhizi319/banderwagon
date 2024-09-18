@@ -187,6 +187,7 @@ impl WnafGottiContext {
         }
     }
 
+
     //pub fn table<G: PrimeGroup>(&self,mut base: G) -> Vec<G>
     pub fn table<G: PrimeGroup>(&self,base: G)-> Vec<G> {
 
@@ -204,16 +205,14 @@ impl WnafGottiContext {
         let mut table_basis = Vec::with_capacity(points_per_column);
         let mut dbl = base.clone();
         table_basis.push(base);
-
+        //计算2^0*G,2^2*G,2^4*G,2^6*G,...,2^252*G
         for _i in 1..(points_per_column) {
             for _j in 0..self.t {
                 dbl= dbl.double();
             }
             table_basis.push(dbl.clone());
-            //println!("threshold: {:?}", table_basis[i]);
         }
         let mut nn_table = vec![G::zero(); window_count * window_size];
-
         for i in 0..window_count {
             let w=i;
             let start = w * self.b as usize;
@@ -223,15 +222,11 @@ impl WnafGottiContext {
             }
             let window_basis: &mut [G] = &mut table_basis[start..end];
             let mut table = vec![G::zero(); window_size];
-            //let table_slice: &mut [G] = table.as_mut_slice();
             self.fill_window(window_basis, &mut *table);
-            //let table_normalized = Element::batch_extended_point_normalized(&table);
-
             for (j, table_element) in table.into_iter().enumerate() {
                 nn_table[w * window_size + j] = table_element;
             }
         }
-
         nn_table
     }
 
@@ -239,8 +234,54 @@ impl WnafGottiContext {
         let table = self.table(g);
         self.mul_with_table(&table, scalar).unwrap()
     }
+    pub fn mul_with_table<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
+        if 1 << (self.b - 1) > base_pre_table.len() {
+            return None;
+        }
 
-    pub fn mul_with_table<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField)-> Option<G> {
+        let window_size = 1 << self.b;
+        let mut accum = G::zero();
+        let fr_bits = 253;
+        let scalar_u64 = WnafGottiContext::scalar_to_u64::<G>(mon_scalar);
+
+        for t_i in 0..self.t {
+            if t_i > 0 {
+                accum = accum.double();
+            }
+
+            let mut curr_window = 0;
+            let mut window_scalar = 0;
+            let mut window_bit_pos = 0;
+
+            for k in (0..fr_bits).step_by(self.t) {
+                let scalar_bit_pos = k + self.t - t_i - 1;
+                if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
+                    let limb = scalar_u64[scalar_bit_pos >> 6];
+                    let bit = (limb >> (scalar_bit_pos & 63)) & 1;
+                    window_scalar |= (bit as usize) << (self.b - window_bit_pos - 1);
+                }
+
+                window_bit_pos += 1;
+                if window_bit_pos == self.b {
+                    if window_scalar > 0 {
+                        let window_precomp = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
+                        accum += window_precomp[window_scalar];
+                    }
+                    curr_window += 1;
+                    window_scalar = 0;
+                    window_bit_pos = 0;
+                }
+            }
+
+            if window_scalar > 0 {
+                let window_slice = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
+                accum += window_slice[window_scalar];
+            }
+        }
+
+        Some(accum)
+    }
+    pub fn mul_with_table1<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField)-> Option<G> {
         // 检查 base_table 是否太小
         if 1 << (self.b - 1) > base_pre_table.len() {
             //return None;
@@ -311,7 +352,21 @@ impl WnafGottiContext {
 
         return Some(accum);
     }
+    pub fn msm_with_multiple_tables<G: PrimeGroup>(&self, base_pre_tables: &[&[G]], mon_scalars: &[&G::ScalarField]) -> Option<Vec<G>> {
+    if base_pre_tables.len() != mon_scalars.len() {
+        return None;
+    }
 
+    let mut results = Vec::with_capacity(mon_scalars.len());
+
+    for (base_pre_table, mon_scalar) in base_pre_tables.iter().zip(mon_scalars.iter()) {
+        let result = self.mul_with_table1(base_pre_table, mon_scalar)?;
+        results.push(result);
+    }
+
+
+    Some(results)
+}
     fn scalar_to_u64<G: PrimeGroup>(scalar: &G::ScalarField) -> Vec<u64> {
         let b = scalar.into_bigint();
         let mut num = b.num_bits();

@@ -32,3 +32,4 @@ path = "example/msm.rs"
 [[bench]]
 name = "benchmark"
 path = "benches/benchmark.rs"
+harness = false

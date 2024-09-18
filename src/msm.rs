@@ -7,7 +7,7 @@ use crate::Element;
 #[derive(Clone, Debug)]
 pub struct MSMPrecompWnaf {
     window_size: usize,
-    tables: Vec<Vec<EdwardsProjective>>,
+    pub tables: Vec<Vec<EdwardsProjective>>,
 }
 
 impl MSMPrecompWnaf {

@@ -1,20 +1,20 @@
 use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective, Fr};
 use ark_ff::Zero;
 use rayon::prelude::*;
-use ark_ec::CurveGroup;
+use ark_ec::PrimeGroup;
 //use ark_ff::{BigInteger, PrimeField};
 use ark_std::vec::Vec;
 use crate::Element;
 use crate::salt_msm::WnafGottiContext;
 #[derive(Clone, Debug)]
 pub struct MSMPrecompWnafGotti {
-    tables: Vec<Vec<EdwardsProjective>>,
+    pub tables: Vec<Vec<EdwardsProjective>>,
     t:         usize,
     b:        usize,
 }
 
 impl MSMPrecompWnafGotti {
-    pub fn fill_window<G: CurveGroup>(basis: &mut [G], table: &mut [G]) {
+    pub fn fill_window<G: PrimeGroup>(basis: &mut [G], table: &mut [G]) {
         // 如果 basis 数组为空
         if basis.is_empty() {
             // 将 table 数组填充为零元素
@@ -33,7 +33,7 @@ impl MSMPrecompWnafGotti {
         }
     }
 
-    pub fn table<G: CurveGroup>(mut bases: Vec<G>, t: usize, b: usize) -> Vec<Vec<G>> {
+    pub fn table<G: PrimeGroup>(mut bases: Vec<G>, t: usize, b: usize) -> Vec<Vec<G>> {
         let fr_bits = 253;
         let window_size = 1 << b;
         let points_per_column = (fr_bits + t - 1) / t as usize;
@@ -107,7 +107,7 @@ impl MSMPrecompWnafGotti {
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
-    use ark_ec::CurveGroup;
+    use ark_ec::{CurveGroup, PrimeGroup};
     //use ark_ff::PrimeField;
     use super::*;
     use crate::{multi_scalar_mul, Element};
@@ -223,7 +223,10 @@ mod tests {
         scalars.push(Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap());
         println!("scalars1: {:?}", scalars1.to_string());
 
-        let precompute=MSMPrecompWnafGotti::new(&basic_crs, 2,8);
+        let precompute=MSMPrecompWnafGotti::new(&basic_crs, 2,10);
+        let precompute_size = std::mem::size_of_val(&precompute.tables);
+        let mem_byte_size=precompute.tables.len()*precompute.tables[0].len()*4*32;
+        println!("precompute_size: {:?}", mem_byte_size);
         use std::time::Instant;
         let start = Instant::now();
         let got_result = precompute.mul(&scalars);

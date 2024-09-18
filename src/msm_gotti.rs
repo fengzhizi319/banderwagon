@@ -95,7 +95,7 @@ impl MSMPrecompWnafGotti {
             .iter()
             .zip(self.tables.iter())
             .filter(|(scalar, _)| !scalar.is_zero())
-            .map(|(scalar, table)| wnaf_gotti_context.mul_with_table_gotti(table, scalar).unwrap())
+            .map(|(scalar, table)| wnaf_gotti_context.mul_with_table(table, scalar).unwrap())
             .sum();
 
         Element(result)

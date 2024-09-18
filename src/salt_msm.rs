@@ -63,44 +63,6 @@ impl WnafContext {
     /// Returns `None` if the table is too small.
 
 
-    pub fn mul_with_table_old<G: PrimeGroup>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
-        // 检查 base_table 是否太小
-        if 1 << (self.window_size - 1) > base_table.len() {
-            return None;
-        }
-
-        // 将标量转换为 wNAF 数据
-        let wnaf_data = WnafContext::scalar_to_wnaf_data_old::<G>(scalar, self.window_size);
-        let mut carry = 0;
-        let threshold = 1 << (self.window_size - 1);
-        let mut result = G::zero();
-
-        // 遍历 wNAF 数据
-        for (i, &wnaf_value) in wnaf_data.iter().enumerate() {
-            let mut index = (wnaf_value + carry) as usize;
-            if index == 0 {
-                continue;
-            }
-
-            carry = 0;
-            if index > threshold {
-                // 计算负索引并更新结果
-                index = (1 << self.window_size) - index;
-                if index != 0 {
-                    let element = base_table[index - 1 + i * threshold].clone();
-                    result -= element;
-                }
-                carry = 1;
-            } else {
-                // 计算正索引并更新结果
-                let element = base_table[index - 1 + i * threshold];
-                result += element;
-            }
-        }
-
-        // 返回结果
-        Some(result)
-    }
     pub fn mul_with_table<G: PrimeGroup>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
         // 检查 base_table 是否太小
         if 1 << (self.window_size - 1) > base_table.len() {
@@ -127,41 +89,6 @@ impl WnafContext {
         Some(result)
     }
 
-    fn scalar_to_wnaf_data_old<G: PrimeGroup>(scalar: &G::ScalarField, w: usize) -> Vec<u64> {
-        // 将标量转换为 u64 向量，蒙哥马利域转为整数域
-        let source = WnafContext::scalar_to_u64::<G>(scalar);
-        // mask用来异或取最低的w位
-        let mask = (1 << w) - 1;
-        // 创建一个空向量来存储 wNAF 数据
-        let mut win_data = vec![];
-        // 初始化偏移量为窗口大小
-        let mut off = w;
-
-        // 遍历源向量
-        for i in 0..source.len() {
-            // 如果偏移量不等于窗口大小，更新数据向量的最后一个元素
-            let s = if off != w {
-                let mask = (1 << (w - off)) - 1;
-                let j = win_data.len() - 1;
-                win_data[j] += (source[i] & mask) << off;
-                (source[i] >> (w - off), 64 - w + off)
-            } else {
-                (source[i], 64)
-            };
-
-            // 以窗口大小为步长遍历剩余的位
-            for j in (0..s.1).step_by(w) {
-                // 提取窗口值并将其推入数据向量
-                let d = (s.0 >> j) & mask;
-                win_data.push(d);
-                off = j;
-            }
-            // 更新偏移量
-            off = s.1 - off;
-        }
-        win_data
-
-    }
     fn scalar_to_wnaf_data<G: PrimeGroup>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
         // 将标量转换为 u64 向量，蒙哥马利域转为整数域
         let source = WnafContext::scalar_to_u64::<G>(scalar);
@@ -236,11 +163,6 @@ pub struct WnafGottiContext {
 
 
 impl WnafGottiContext {
-    /// Constructs a new context for a window of size `window_size`.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if not `2 <= window_size < 64`
     pub fn new(t: usize,b: usize) -> Self {
         assert!(b >= 2);
         assert!(b < 64);
@@ -313,56 +235,16 @@ impl WnafGottiContext {
         nn_table
     }
 
-    /// Computes scalar multiplication of a PrimeGroup element `g` by `scalar`.
-    ///
-    /// This method uses the wNAF algorithm to perform the scalar
-    /// multiplication; first, it uses `Self::table` to calculate an
-    /// appropriate table of multiples of `g`, and then uses the wNAF
-    /// algorithm to compute the scalar multiple.
     pub fn mul<G: PrimeGroup>(&self, g: G, scalar: &G::ScalarField) -> G {
         let table = self.table(g);
         self.mul_with_table(&table, scalar).unwrap()
     }
 
-    /// Computes scalar multiplication of a PrimeGroup element by `scalar`.
-    /// `base_table` holds precomputed multiples of the PrimeGroup element; it can be
-    /// generated using `Self::table`. `scalar` is an element of
-    /// `G::ScalarField`.
-    ///
-    /// Returns `None` if the table is too small.
-
-
-
-    pub fn mul_with_table<G: PrimeGroup>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
+    pub fn mul_with_table<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField)-> Option<G> {
         // 检查 base_table 是否太小
-        if 1 << (self.b - 1) > base_table.len() {
-            return None;
+        if 1 << (self.b - 1) > base_pre_table.len() {
+            //return None;
         }
-
-        // 将标量转换为 wNAF 数据
-        let wnaf_data = crate::salt_msm::WnafContext::scalar_to_wnaf_data::<G>(scalar, self.b);
-
-        let pre_comp_size = 1 << (self.b - 1);
-        let mut result = G::zero();
-        // 遍历 wNAF 数据
-        for (i, &wnaf_value) in wnaf_data.iter().enumerate() {
-            if wnaf_value < 0 {
-                let element = base_table[(-wnaf_value - 1) as usize + i * pre_comp_size];
-                result -= element;
-            } else {
-                // 计算正索引并更新结果
-                let element = base_table[(wnaf_value - 1) as usize + i * pre_comp_size];
-                result += element;
-            }
-        }
-        // 返回结果
-        Some(result)
-    }
-    pub fn mul_with_table_gotti<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField)-> Option<G> {
-        // 检查 base_table 是否太小
-        // if 1 << (self.b - 1) > base_pre_table.len() {
-        //     //return None;
-        // }
         // 将标量转换为 wNAF 数据
         //let scalar = mon_scalar.into_bigint();
         //let source = WnafGottiContext::scalar_to_u64::<G>(scalar);

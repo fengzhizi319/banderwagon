@@ -1,5 +1,5 @@
 use ark_ec::PrimeGroup;
-use ark_ed_on_bls12_381_bandersnatch::Fr;
+//use ark_ed_on_bls12_381_bandersnatch::Fr;
 use ark_ff::{BigInteger, PrimeField, Zero};
 use ark_std::vec::Vec;
 use crate::Element;
@@ -187,26 +187,7 @@ impl WnafGottiContext {
             table[l / 2 + i] = table[i] + basis[0];
         }
     }
-    fn fill_window_normal<G: PrimeGroup>(&self, basis: &mut [G], table: &mut [G]) {
-        // 如果 basis 数组为空
-        if basis.is_empty() {
-            // 将 table 数组填充为零元素
-            for i in 0..table.len() {
-                table[i] = G::zero();
-            }
-            return;
-        }
-        let l = table.len();
-        // 递归调用 fill_window，传入去掉第一个元素的 basis 数组和 table 数组的前半部分
-        self.fill_window_normal(&mut basis[1..], &mut table[.. l/ 2]);
-        // 遍历 table 数组的前半部分
-        for i in 0..l / 2 {
-            // 将 table 数组后半部分的对应元素设置为当前元素与 basis 数组第一个元素的和
-            table[l / 2 + i] = table[i] + basis[0];
-        }
 
-
-    }
 
     //pub fn table<G: PrimeGroup>(&self,mut base: G) -> Vec<G>
     pub fn table<G: PrimeGroup>(&self,base: G)-> Vec<G> {
@@ -256,7 +237,7 @@ impl WnafGottiContext {
     }
     pub fn mul_charles<G: PrimeGroup>(&self, g: G, scalar: &G::ScalarField) -> G {
         let table = self.table(g);
-        self.mul_with_table_charles(&table, scalar).unwrap()
+        self.mul_with_table_normal(&table, scalar).unwrap()
     }
 
     pub fn mul_with_table<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
@@ -373,8 +354,7 @@ impl WnafGottiContext {
             }
 
         }
-
-
+        println!("add_double_count: {:?}", add_double_count);
         return Some(accum);
     }
     pub fn msm_with_multiple_tables<G: PrimeGroup>(&self, base_pre_tables: &[&[G]], mon_scalars: &[&G::ScalarField]) -> Option<Vec<G>> {
@@ -458,68 +438,7 @@ impl WnafGottiContext {
 
         return new_naf_vec;
     }
-    pub(crate) fn rev_gotti_naf<G: PrimeGroup>(&self, scalar: &G::ScalarField) -> Vec<Vec<u16>> {
-        let b = scalar.into_bigint();
-        let mut num = b.num_bits();
-        num = if num & 63 == 0 {
-            num >> 6
-        } else {
-            (num >> 6) + 1
-        };
-        let fr_bits = 253;
-        let mut naf_vec: Vec<Vec<u8>> = vec![Vec::new(); self.t];
 
-        let mut scalar_u64_4_ = Vec::with_capacity(num as usize);
-        scalar_u64_4_.extend_from_slice(&b.as_ref()[..num as usize]);
-        for t_i in 0..self.t {
-            for k in (0..fr_bits).step_by(self.t) {
-                let scalar_bit_pos = k + self.t - t_i - 1;
-                //println!("k: {:?}", k);
-                //println!("scalar_bit_pos: {:?}", scalar_bit_pos);
-                if scalar_bit_pos < fr_bits && !scalar.is_zero() {
-                    let limb = scalar_u64_4_[scalar_bit_pos >> 6];
-                    let bit = ((limb >> (scalar_bit_pos & 63)) & 1) as u8;
-                    naf_vec[t_i].push(bit);
-                }
-            }
-        }
-        let mut new_naf_vec: Vec<Vec<u16>> = Vec::with_capacity(self.t);
-
-        for vec in naf_vec.iter() {
-            let mut new_vec = Vec::with_capacity((vec.len() + self.b - 1) / self.b);
-            let mut combined: u16 = 0;
-            let mut bit_pos = self.b-1;
-
-            for &bit in vec.iter() {
-                combined |= (bit as u16) << bit_pos;
-                bit_pos -= 1;
-
-                if bit_pos == 0 {
-                    new_vec.push(combined);
-                    combined = 0;
-                    bit_pos = self.b-1
-                }
-            }
-
-            if bit_pos > 0 {
-                new_vec.push(combined);
-            }
-
-            new_naf_vec.push(new_vec);
-        }
-        println!("new_naf_vec: {:?}", new_naf_vec);
-
-        return new_naf_vec;
-    }
-    fn reverse_bits_4bit(mut n: u8) -> u8 {
-        let mut reversed = 0;
-        for _ in 0..4 {
-            reversed <<= 1;
-            reversed |= n & 1;
-            n >>= 1;
-        }
-        reversed
-    }
     fn reverse_bits(&self,mut num: u32, t: usize) -> u32 {
         let mut reversed = 0;
         for _ in 0..t {
@@ -580,7 +499,7 @@ impl WnafGottiContext {
         }
         nn_table
     }
-    pub fn mul_with_table_charles<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
+    pub fn mul_with_table_normal<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
         if 1 << (self.b - 1) > base_pre_table.len() {
             return None;
         }

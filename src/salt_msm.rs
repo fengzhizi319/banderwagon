@@ -280,8 +280,6 @@ impl WnafGottiContext {
 
             for k in (0..fr_bits).step_by(self.t) {
                 let scalar_bit_pos = k + self.t - t_i - 1;
-                //println!("k: {:?}", k);
-                //println!("scalar_bit_pos: {:?}", scalar_bit_pos);
                 if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
                     let limb = scalar_u64[scalar_bit_pos >> 6];
                     let bit = (limb >> (scalar_bit_pos & 63)) & 1;
@@ -290,12 +288,9 @@ impl WnafGottiContext {
 
                 window_bit_pos += 1;
                 if window_bit_pos == self.b {
-                    println!("window_scalar: {:?}", window_scalar);
                     if window_scalar > 0 {
                         let window_precomp = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
                         accum += window_precomp[window_scalar];
-                        println!("accum: {:?}", accum);
-                        println!("window_precomp[window_scalar]: {:?}", window_precomp[window_scalar]);
                     }
                     curr_window += 1;
                     window_scalar = 0;
@@ -525,7 +520,7 @@ impl WnafGottiContext {
         }
         reversed
     }
-    fn reverse_bits(mut num: u32, t: usize) -> u32 {
+    fn reverse_bits(&self,mut num: u32, t: usize) -> u32 {
         let mut reversed = 0;
         for _ in 0..t {
             reversed <<= 1;
@@ -539,7 +534,7 @@ impl WnafGottiContext {
     pub  fn rearrange_table<G: Clone>(&self,table: &[G]) -> Vec<G> {
         let mut table1 = vec![table[0].clone(); table.len()];
         for i in 0..table.len() {
-            let reversed_index = WnafGottiContext::reverse_bits(i as u32,self.b) as usize;
+            let reversed_index = self.reverse_bits(i as u32,self.b) as usize;
             table1[reversed_index] = table[i].clone();
         }
         table1
@@ -606,12 +601,10 @@ impl WnafGottiContext {
 
             for k in (0..fr_bits).step_by(self.t) {
                 let scalar_bit_pos = k + self.t - t_i - 1;
-                // println!("k: {:?}", k);
-                // println!("scalar_bit_pos: {:?}", scalar_bit_pos);
+
                 if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
                     let limb = scalar_u64[scalar_bit_pos >> 6];
                     let bit = (limb >> (scalar_bit_pos & 63)) & 1;
-                    //window_scalar |= (bit as usize) << (self.b - window_bit_pos - 1);
                     window_scalar |= (bit as usize) << (window_bit_pos);
                 }
 
@@ -619,13 +612,7 @@ impl WnafGottiContext {
                 if window_bit_pos == self.b {
                     if window_scalar > 0 {
                         let window_precomp = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
-
-                        println!("window_scalar: {:?}", window_scalar);
-                        let tmp=window_precomp[window_scalar];
-                        accum += tmp;
-                        //accum += window_precomp[window_scalar];
-                        println!("accum: {:?}", accum);
-                        println!("window_precomp[window_scalar]: {:?}", window_precomp[window_scalar]);
+                        accum += window_precomp[window_scalar];
                     }
                     curr_window += 1;
                     window_scalar = 0;

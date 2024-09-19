@@ -1,4 +1,5 @@
 use ark_ec::PrimeGroup;
+use ark_ed_on_bls12_381_bandersnatch::Fr;
 use ark_ff::{BigInteger, PrimeField, Zero};
 use ark_std::vec::Vec;
 use crate::Element;
@@ -234,6 +235,7 @@ impl WnafGottiContext {
         let table = self.table(g);
         self.mul_with_table(&table, scalar).unwrap()
     }
+
     pub fn mul_with_table<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
         if 1 << (self.b - 1) > base_pre_table.len() {
             return None;
@@ -255,6 +257,8 @@ impl WnafGottiContext {
 
             for k in (0..fr_bits).step_by(self.t) {
                 let scalar_bit_pos = k + self.t - t_i - 1;
+                println!("k: {:?}", k);
+                println!("scalar_bit_pos: {:?}", scalar_bit_pos);
                 if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
                     let limb = scalar_u64[scalar_bit_pos >> 6];
                     let bit = (limb >> (scalar_bit_pos & 63)) & 1;
@@ -353,20 +357,20 @@ impl WnafGottiContext {
         return Some(accum);
     }
     pub fn msm_with_multiple_tables<G: PrimeGroup>(&self, base_pre_tables: &[&[G]], mon_scalars: &[&G::ScalarField]) -> Option<Vec<G>> {
-    if base_pre_tables.len() != mon_scalars.len() {
-        return None;
+        if base_pre_tables.len() != mon_scalars.len() {
+            return None;
+        }
+
+        let mut results = Vec::with_capacity(mon_scalars.len());
+
+        for (base_pre_table, mon_scalar) in base_pre_tables.iter().zip(mon_scalars.iter()) {
+            let result = self.mul_with_table1(base_pre_table, mon_scalar)?;
+            results.push(result);
+        }
+
+
+        Some(results)
     }
-
-    let mut results = Vec::with_capacity(mon_scalars.len());
-
-    for (base_pre_table, mon_scalar) in base_pre_tables.iter().zip(mon_scalars.iter()) {
-        let result = self.mul_with_table1(base_pre_table, mon_scalar)?;
-        results.push(result);
-    }
-
-
-    Some(results)
-}
     fn scalar_to_u64<G: PrimeGroup>(scalar: &G::ScalarField) -> Vec<u64> {
         let b = scalar.into_bigint();
         let mut num = b.num_bits();
@@ -379,6 +383,148 @@ impl WnafGottiContext {
         let mut res = Vec::with_capacity(num as usize);
         res.extend_from_slice(&b.as_ref()[..num as usize]);
         res
+    }
+    pub(crate) fn gotti_naf<G: PrimeGroup>(&self, scalar: &G::ScalarField) -> Vec<Vec<u16>> {
+        let b = scalar.into_bigint();
+        let mut num = b.num_bits();
+        num = if num & 63 == 0 {
+            num >> 6
+        } else {
+            (num >> 6) + 1
+        };
+        let fr_bits = 253;
+        let mut naf_vec: Vec<Vec<u8>> = vec![Vec::new(); self.t];
+
+        let mut scalar_u64_4_ = Vec::with_capacity(num as usize);
+        scalar_u64_4_.extend_from_slice(&b.as_ref()[..num as usize]);
+        for t_i in 0..self.t {
+            for k in (0..fr_bits).step_by(self.t) {
+                let scalar_bit_pos = k + self.t - t_i - 1;
+                println!("k: {:?}", k);
+                println!("scalar_bit_pos: {:?}", scalar_bit_pos);
+                if scalar_bit_pos < fr_bits && !scalar.is_zero() {
+                    let limb = scalar_u64_4_[scalar_bit_pos >> 6];
+                    let bit = ((limb >> (scalar_bit_pos & 63)) & 1) as u8;
+                    naf_vec[t_i].push(bit);
+                }
+            }
+        }
+        let mut new_naf_vec: Vec<Vec<u16>> = Vec::with_capacity(self.t);
+
+        for vec in naf_vec.iter() {
+            let mut new_vec = Vec::with_capacity((vec.len() + self.b - 1) / self.b);
+            let mut combined: u16 = 0;
+            let mut bit_pos = 0;
+
+            for &bit in vec.iter() {
+                combined |= (bit as u16) << bit_pos;
+                bit_pos += 1;
+
+                if bit_pos == self.b {
+                    new_vec.push(combined);
+                    combined = 0;
+                    bit_pos = 0;
+                }
+            }
+
+            if bit_pos > 0 {
+                new_vec.push(combined);
+            }
+
+            new_naf_vec.push(new_vec);
+        }
+        println!("new_naf_vec: {:?}", new_naf_vec);
+
+        return new_naf_vec;
+    }
+    pub fn table_charles<G: PrimeGroup>(&self,base: G)-> Vec<G> {
+
+        let fr_bits =253;
+        //b为窗口bit长度，t为预处理的倍数，window_size为每个窗口内的值的所有可能的值
+        let window_size = 1 << self.b;
+        //用t把标量分为t个部分，如果t=2，那么标量分为2部分，每部分的位数为fr_bits/2，kP=2A1+A0，
+        // A1为高位，A0为低位，A1，A0即为划分出来的部分。A1、A0的所有可能的个数为points_per_column，
+        // 如t=2，b=5，那么points_per_column=127
+        let points_per_column = (fr_bits + self.t - 1) / self.t as usize;
+        //窗口的个数
+        let window_count = (points_per_column + self.b - 1) / self.b; // 等价于 ceil(256 / self.window_size)
+        //let table_size = window_count * (1 << (self.b - 1));
+        //let threshold = 1 << (self.b - 1);
+        let mut table_basis = Vec::with_capacity(points_per_column);
+        let mut dbl = base.clone();
+        table_basis.push(base);
+        //计算2^0*G,2^2*G,2^4*G,2^6*G,...,2^252*G
+        for _i in 1..(points_per_column) {
+            for _j in 0..self.t {
+                dbl= dbl.double();
+            }
+            table_basis.push(dbl.clone());
+        }
+        let mut nn_table = vec![G::zero(); window_count * window_size];
+        for i in 0..window_count {
+            let w=i;
+            let start = w * self.b as usize;
+            let mut end = (w + 1) * self.b as usize;
+            if end > table_basis.len() {
+                end = table_basis.len();
+            }
+            let window_basis: &mut [G] = &mut table_basis[start..end];
+            let mut table = vec![G::zero(); window_size];
+            self.fill_window(window_basis, &mut *table);
+            for (j, table_element) in table.into_iter().enumerate() {
+                nn_table[w * window_size + j] = table_element;
+            }
+        }
+        nn_table
+    }
+    pub fn mul_with_table_charles<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
+        if 1 << (self.b - 1) > base_pre_table.len() {
+            return None;
+        }
+
+        let window_size = 1 << self.b;
+        let mut accum = G::zero();
+        let fr_bits = 253;
+        let scalar_u64 = WnafGottiContext::scalar_to_u64::<G>(mon_scalar);
+
+        for t_i in 0..self.t {
+            if t_i > 0 {
+                accum = accum.double();
+            }
+
+            let mut curr_window = 0;
+            let mut window_scalar = 0;
+            let mut window_bit_pos = 0;
+
+            for k in (0..fr_bits).step_by(self.t) {
+                let scalar_bit_pos = k + self.t - t_i - 1;
+                println!("k: {:?}", k);
+                println!("scalar_bit_pos: {:?}", scalar_bit_pos);
+                if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
+                    let limb = scalar_u64[scalar_bit_pos >> 6];
+                    let bit = (limb >> (scalar_bit_pos & 63)) & 1;
+                    window_scalar |= (bit as usize) << (self.b - window_bit_pos - 1);
+                }
+
+                window_bit_pos += 1;
+                if window_bit_pos == self.b {
+                    if window_scalar > 0 {
+                        let window_precomp = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
+                        accum += window_precomp[window_scalar];
+                    }
+                    curr_window += 1;
+                    window_scalar = 0;
+                    window_bit_pos = 0;
+                }
+            }
+
+            if window_scalar > 0 {
+                let window_slice = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
+                accum += window_slice[window_scalar];
+            }
+        }
+
+        Some(accum)
     }
 }
 

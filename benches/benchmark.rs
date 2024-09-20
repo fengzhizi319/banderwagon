@@ -14,7 +14,7 @@ fn benchmark_precompute_mul(c: &mut Criterion) {
     let scalars = vec![
         Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap()
     ];
-    let ts=[2,3,4];
+    let ts=[2,3];
     let bs=[6,7,8,9,10,11,12,13,14,15,16];
 
     for &t in &ts {

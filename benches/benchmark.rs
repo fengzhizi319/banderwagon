@@ -14,18 +14,18 @@ fn benchmark_precompute_mul(c: &mut Criterion) {
     let scalars = vec![
         Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap()
     ];
-    let ts=[2];
-    let bs=[8,10,12,16];
+    let ts=[2,3,4];
+    let bs=[6,7,8,9,10,11,12,13,14,15,16];
 
     for &t in &ts {
         for &b in &bs {
-            let precompute = MSMPrecompWnafGotti::new(&basic_crs, t, b);
+            let precompute = MSMPrecompWnafGotti::new_window(&basic_crs, t, b);
             let mem_byte_size=precompute.tables.len()*precompute.tables[0].len()*4*32;
             println!("precompute_byte_size: {:?}", mem_byte_size);
 
             c.bench_function(&format!("prempute_mul_t{}_b{}", t, b), |b| {
                 b.iter(|| {
-                    let result = precompute.mul(black_box(&scalars));
+                    let result = precompute.mul_window(black_box(&scalars));
                     black_box(result);
                 })
             });
@@ -42,7 +42,7 @@ fn benchmark_std_precompute_mul(c: &mut Criterion) {
     let scalars = vec![
         Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap()
     ];
-    let windows=[8,10,12,16];
+    let windows=[6,7,8,9,10,11,12,13,14,15,16];
 
     for &window in &windows {
         let precompute = MSMPrecompWnaf::new(&basic_crs, window);

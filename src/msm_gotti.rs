@@ -89,14 +89,14 @@ impl MSMPrecompWnafGotti {
             b
         }
     }
-    pub fn new_charles(basis: &[Element], t: usize, b: usize)-> MSMPrecompWnafGotti {
+    pub fn new_window(basis: &[Element], t: usize, b: usize)-> MSMPrecompWnafGotti {
         let wnaf_gotti_context = WnafGottiContext::new(t,b);
 
         // Parallel generation of precompute tables
         // 并行生成预计算表
         MSMPrecompWnafGotti {
             tables: basis.par_iter().map(|base|{
-                wnaf_gotti_context.table_charles(base.0)
+                wnaf_gotti_context.table_window(base.0)
             }).collect(),
             t,
             b
@@ -113,7 +113,7 @@ impl MSMPrecompWnafGotti {
 
         Element(result)
     }
-    pub fn mul_charles(&self, scalars: &[Fr]) -> Element {
+    pub fn mul_window(&self, scalars: &[Fr]) -> Element {
         let wnaf_gotti_context = WnafGottiContext::new(self.t,self.b);
         let result: EdwardsProjective = scalars
             .iter()
@@ -124,10 +124,21 @@ impl MSMPrecompWnafGotti {
 
         Element(result)
     }
-    pub fn gotti_naf(&self, scalars: &[Fr]) -> Vec<Vec<u16>> {
+    pub fn mul_naf(&self, scalars: &[Fr]) -> Element {
+        let wnaf_gotti_context = WnafGottiContext::new(self.t,self.b);
+        let result: EdwardsProjective = scalars
+            .iter()
+            .zip(self.tables.iter())
+            .filter(|(scalar, _)| !scalar.is_zero())
+            .map(|(scalar, table)| wnaf_gotti_context.mul_with_table_normal(table, scalar).unwrap())
+            .sum();
+
+        Element(result)
+    }
+    pub fn gotti_window(&self, scalars: &[Fr]) -> Vec<Vec<u16>> {
         let wnaf_gotti_context = WnafGottiContext::new(self.t,self.b);
         let scalar=scalars[0];
-        let result: Vec<Vec<u16>> = wnaf_gotti_context.gotti_naf::<EdwardsProjective>(&scalar);
+        let result: Vec<Vec<u16>> = wnaf_gotti_context.gotti_window::<EdwardsProjective>(&scalar);
         result
     }
 
@@ -273,7 +284,7 @@ mod tests {
 
 
     #[test]
-    fn correctness_gotti_naf() {
+    fn correctness_gotti_window() {
         // Create a vector of 256 elements, each being a multiple of the prime subgroup generator
         // 创建一个包含 256 个元素的向量，每个元素都是素数子群生成元的倍数
 
@@ -288,7 +299,7 @@ mod tests {
 
         let precompute=MSMPrecompWnafGotti::new(&basic_crs, 2,4);
 
-        let _got_result = precompute.gotti_naf(&scalars);
+        let _got_result = precompute.gotti_window(&scalars);
 
         //let mut scalars = vec![];
 
@@ -308,12 +319,12 @@ mod tests {
         scalars.push(Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap());
 
 
-        let precompute=MSMPrecompWnafGotti::new_charles(&basic_crs, 2,4);
+        let precompute=MSMPrecompWnafGotti::new_window(&basic_crs, 2,4);
         let mem_byte_size=precompute.tables.len()*precompute.tables[0].len()*4*32;
         println!("precompute_size: {:?}", mem_byte_size);
         use std::time::Instant;
         let start = Instant::now();
-        let got_result = precompute.mul_charles(&scalars);
+        let got_result = precompute.mul_window(&scalars);
         let duration = start.elapsed();
         println!("Time elapsed in mul is: {:?}", duration);
 

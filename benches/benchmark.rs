@@ -2,8 +2,14 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ark_std::str::FromStr;
 use banderwagon::{Element, msm_gotti::MSMPrecompWnafGotti, Fr};
 use banderwagon::msm::MSMPrecompWnaf;
-
+use sysinfo::{System};
 fn benchmark_precompute_mul(c: &mut Criterion) {
+    let mut system = System::new_all();
+    system.refresh_all();
+    for (i, cpu) in system.cpus().iter().enumerate() {
+        println!("CPU {} frequency: {} MHz", i, cpu.frequency());
+    }
+
     // Create a vector of 256 elements, each being a multiple of the prime subgroup generator
     let basis_num = 1;
     let mut basic_crs = Vec::with_capacity(basis_num);

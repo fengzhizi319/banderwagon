@@ -18,6 +18,8 @@ sha2 = "0.11.0-pre.4"
 tokio = "1.40.0"
 num_cpus = "1.16.0"
 criterion = "0.5.1"
+sysinfo = "0.31.4"
+
 #timetrace-ffi = { git = "ssh://git@github.com/megaeth-labs/timetrace-ffi" }
 [dev-dependencies]
 hex = "0.4.3"
@@ -33,3 +35,4 @@ path = "example/msm.rs"
 name = "benchmark"
 path = "benches/benchmark.rs"
 harness = false
+

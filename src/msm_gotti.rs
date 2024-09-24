@@ -150,9 +150,12 @@ impl MSMPrecompWnafGotti {
 mod tests {
     use std::str::FromStr;
     use ark_ec::{CurveGroup};
+    use ark_std::rand::SeedableRng;
+    use ark_std::UniformRand;
+    use rand_chacha::ChaCha20Rng;
     //use ark_ff::PrimeField;
     use super::*;
-    use crate::{multi_scalar_mul, Element};
+    use crate::{ Element};
     use crate::{msm_gotti::MSMPrecompWnafGotti, Fr};
     use crate::msm::MSMPrecompWnaf;
 
@@ -292,7 +295,7 @@ mod tests {
 
     }
     #[test]
-    fn correctness_window_msm_one() {
+    fn correctness_window_msm_one_g() {
         // Create a vector of 256 elements, each being a multiple of the prime subgroup generator
         // 创建一个包含 256 个元素的向量，每个元素都是素数子群生成元的倍数
 
@@ -305,14 +308,19 @@ mod tests {
         //q-1
         scalars.push(Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap());
 
-        let precompute=MSMPrecompWnaf::new(&basic_crs, 10);
+
+        let precompute=MSMPrecompWnaf::new(&basic_crs, 4);
         let mem_byte_size=precompute.tables.len()*precompute.tables[0].len()*4*32;
         println!("precompute_size: {:?}", mem_byte_size);
         use std::time::Instant;
         let start = Instant::now();
+        for _i in 0..999 {
+            let _got_result = precompute.mul(&scalars);
+        }
         let got_result = precompute.mul(&scalars);
+
         let duration = start.elapsed();
-        println!("Time elapsed in mul is: {:?}", duration);
+        println!("Time elapsed in mul is: {:?}", duration/1000);
 
         let affine_result= got_result.0.into_affine();
         let string_x="33549696307925229982445904590536874618633472405590028303463218160177641247209";
@@ -322,6 +330,39 @@ mod tests {
         assert_eq!(string_x, x);
         assert_eq!(string_y, y);
         println!("got_result: {:?}", affine_result);
+
+    }
+
+    #[test]
+
+    fn correctness_window_msm_multi_scalar_one_g() {
+        // Create a vector of 256 elements, each being a multiple of the prime subgroup generator
+        // 创建一个包含 256 个元素的向量，每个元素都是素数子群生成元的倍数
+
+        let scalar_num = 10;
+        let basis_num = 1;
+        let mut basic_crs = Vec::with_capacity(basis_num);
+        for i in 0..basis_num {
+            basic_crs.push(Element::prime_subgroup_generator() * Fr::from((i + 1) as u64));
+        }
+
+        let mut rng = ChaCha20Rng::from_seed([2u8; 32]);
+        let scalars: Vec<Fr> = (0..scalar_num).map(|_| Fr::rand(&mut rng)).collect();
+
+        let precompute = MSMPrecompWnaf::new(&basic_crs, 4);
+        let mem_byte_size = precompute.tables.len() * precompute.tables[0].len() * 4 * 32;
+        println!("precompute_size: {:?}", mem_byte_size);
+        use std::time::Instant;
+        let start = Instant::now();
+        for i in 0..scalar_num {
+
+            let mut scalars0 = vec![];
+            scalars0.push(scalars[i]);
+            let _got_result = precompute.mul(&scalars0);
+
+        }
+        let duration = start.elapsed();
+        println!("Time elapsed in mul is: {:?}", duration / scalar_num as u32);
 
     }
 }

@@ -90,7 +90,6 @@ impl MSMPrecompWnaf {
             .filter(|(scalar, _)| !scalar.is_zero())
             .map(|(scalar, table)| wnaf_context.mul_with_table(table, scalar).unwrap())
             .sum();
-
         Element(result)
     }
 

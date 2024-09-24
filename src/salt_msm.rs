@@ -80,7 +80,7 @@ impl WnafContext {
             if wnaf_value < 0 {
                 let element = base_table[(-wnaf_value - 1) as usize + i * pre_comp_size];
                 result -= element;
-            } else {
+            } else if wnaf_value > 0 {
                 // 计算正索引并更新结果
                 let element = base_table[(wnaf_value - 1) as usize + i * pre_comp_size];
                 result += element;

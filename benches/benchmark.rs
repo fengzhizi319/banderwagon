@@ -3,7 +3,7 @@ use ark_std::str::FromStr;
 use banderwagon::{Element, msm_gotti::MSMPrecompWnafGotti, Fr};
 use banderwagon::msm::MSMPrecompWnaf;
 use sysinfo::{System};
-fn benchmark_precompute_mul(c: &mut Criterion) {
+fn benchmark_gotti_precompute_mul(c: &mut Criterion) {
     let mut system = System::new_all();
     system.refresh_all();
     for (i, cpu) in system.cpus().iter().enumerate() {
@@ -48,7 +48,8 @@ fn benchmark_std_precompute_mul(c: &mut Criterion) {
     let scalars = vec![
         Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap()
     ];
-    let windows=[6,7,8,9,10,11,12,13,14,15,16];
+    //let windows=[6,7,8,9,10,11,12,13,14,15,16];
+    let windows=[6,8,10,12,16];
 
     for &window in &windows {
         let precompute = MSMPrecompWnaf::new(&basic_crs, window);
@@ -63,5 +64,5 @@ fn benchmark_std_precompute_mul(c: &mut Criterion) {
         });
     }
 }
-criterion_group!(benches, benchmark_precompute_mul,benchmark_std_precompute_mul);
+criterion_group!(benches, benchmark_std_precompute_mul);//benchmark_gotti_precompute_mul
 criterion_main!(benches);

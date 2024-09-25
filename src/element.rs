@@ -6,22 +6,12 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 pub use ark_ed_on_bls12_381_bandersnatch::Fr;
 
+use crate::scalar_multi::ExtendPoint;
+
 #[derive(Debug, Clone, Copy, Eq)]
 pub struct Element(pub(crate) EdwardsProjective);
 
 impl PartialEq for Element {
-    /// 比较两个 `Element` 是否相等。
-    ///
-    /// # 参数
-    /// - `self`: 当前的 `Element`。
-    /// - `other`: 另一个 `Element`。
-    ///
-    /// # 返回值
-    /// 如果两个 `Element` 相等，则返回 `true`，否则返回 `false`。
-    ///
-    /// # 说明
-    /// 该函数首先检查两个点的 x 和 y 坐标是否都为 0。如果是，则返回 `false`。
-    /// 否则，通过比较 `x1 * y2` 和 `x2 * y1` 是否相等来判断两个点是否相等。
     fn eq(&self, other: &Self) -> bool {
         let x1 = self.0.x;
         let y1 = self.0.y;
@@ -29,9 +19,12 @@ impl PartialEq for Element {
         let x2 = other.0.x;
         let y2 = other.0.y;
 
-        // 如果 x 和 y 都为 0，则不应该生成这个点，除非直接分配了 x 和 y 为 0 并绕过了 API。
-        // 这种情况在 C 语言等中是可能的，我们在这里保留这个检查，以防有人将其作为参考，
-        // 或者在某种情况下创建了一个绕过检查的 Element。
+        // One should not be able to generate this point, unless they have assigned `x` and `y`
+        // to be 0 directly and have bypassed the API.
+        //
+        // This is possible in languages such as C, we will leave this check here
+        // for those who are using this as a reference, or in the case that there is some way to
+        // create an Element and bypass the checks.
         if x1.is_zero() & y1.is_zero() {
             return false;
         }
@@ -39,21 +32,13 @@ impl PartialEq for Element {
             return false;
         }
 
-        // 检查两个点是否相等，通过比较 x1 * y2 和 x2 * y1 是否相等
         (x1 * y2) == (x2 * y1)
     }
-}
-#[derive(Clone, Debug, Default)]
-pub struct ExtendPoint {
-    pub x: Fq,
-    pub y: Fq,
-    pub t: Fq,
 }
 
 impl Element {
     pub fn batch_extended_point_normalized(points: &[EdwardsProjective]) -> Vec<ExtendPoint> {
         let mut result = vec![ExtendPoint::default(); points.len()];
-        //let mut zi_mul = vec![<BandersnatchConfig as CurveConfig>::BaseField::ZERO; points.len()];
         let mut zeroes = vec![false; points.len()];
         //accumulator := fp.One()
         let mut accumulator = <BandersnatchConfig as CurveConfig>::BaseField::ONE;
@@ -98,15 +83,12 @@ impl Element {
                 continue
             }
 
-            //a := result[i].X
             let a = result[i].x;
             result[i].x = points[i].x * &a;
-            //result[i].X.Mul(&points[i].X, &a)
             result[i].y = points[i].y * &a;
-            //result[i].Y.Mul(&points[i].Y, &a)
-            result[i].t = result[i].x * &result[i].y;
-            //result[i].T.Mul(&result[i].X, &result[i].Y)
-            //println!("ExtendedPoint[ {} ]: {:?} {:?} {:?}", i, result[i].x.0.0, result[i].y.0.0, result[i].t.0.0);
+
+            //result[i].t = result[i].x * &result[i].y;
+
         }
 
         //panic!("-------");
@@ -117,17 +99,10 @@ impl Element {
         //return result
     }
 
-    /// 将 `Element` 序列化为字节数组。
-    ///
-    /// # 返回值
-    /// 返回一个 32 字节的数组，表示序列化后的 `Element`。
-    ///
-    /// # 说明
-    /// 该函数假设内部的点是“正确的”。我们通过序列化 x 坐标乘以 y 的符号来序列化一个正确的点。
     pub fn to_bytes(&self) -> [u8; 32] {
-        // 我们假设内部这个点是“正确的”
+        // We assume that internally this point is "correct"
         //
-        // 我们通过序列化 x 坐标乘以 y 的符号来序列化一个正确的点
+        // We serialize a correct point by serializing the x co-ordinate times sign(y)
         let affine = EdwardsAffine::from(self.0);
         let x = if is_positive(affine.y) {
             affine.x
@@ -138,12 +113,11 @@ impl Element {
         x.serialize_compressed(&mut bytes[..])
             .expect("serialization failed");
 
-        // 将字节反转为大端字节序，以实现互操作性
+        // reverse bytes to big endian, for interoperability
         bytes.reverse();
 
         bytes
     }
-
 
     // Do not compare the results of this function.
     //
@@ -160,16 +134,8 @@ impl Element {
     }
 
     #[inline]
-    pub fn to_commitment(e :&EdwardsProjective) -> [u8; 64] {
-        let mut bytes = [0u8; 64];
-        e.serialize_uncompressed(&mut bytes[..])
-            .expect("cannot serialize point as an uncompressed byte array");
-        bytes
-    }
-
-    #[inline]
-    pub fn to_bytes_uncompressed_batch(es :&[EdwardsProjective]) -> Vec<[u8; 64]> {
-        // The modification principle comes from go-ipa(https://github.com/crate-crypto/go-ipa)
+    pub fn to_bytes_uncompressed_batch(es :&[Element]) -> Vec<[u8; 64]> {
+        // Modification inspired by go-ipa (https://github.com/crate-crypto/go-ipa)
         let mut bytes = vec![[0 as u8; 64]; es.len()];
         let mut zi_mul = vec![<BandersnatchConfig as CurveConfig>::BaseField::ZERO; es.len()];
         let mut zeros = vec![false; es.len()];
@@ -178,11 +144,11 @@ impl Element {
         //zs_mul = 1*z1*z2*z3.....
         //zi_mul[i] = 1*z1...zi-1
         for i in 0..es.len() {
-            if es[i].z.is_zero() {
+            if es[i].0.z.is_zero() {
                 zeros[i] = true;
             }
             zi_mul[i] = zs_mul;
-            zs_mul = zs_mul * &es[i].z;
+            zs_mul = zs_mul * &es[i].0.z;
         }
 
         // zs_inv = 1/z1*z2*z3.....
@@ -197,10 +163,10 @@ impl Element {
             }
             // z_inv = (z1*z2*z3..zi-1)/(z1*z2*z3..zi)
             let z_inv = zi_mul[i] * &zs_inv;
-            zs_inv = zs_inv * &es[i].z;
+            zs_inv = zs_inv * &es[i].0.z;
 
-            let x = es[i].x * &z_inv;
-            let y = es[i].y * &z_inv;
+            let x = es[i].0.x * &z_inv;
+            let y = es[i].0.y * &z_inv;
             let aff = Affine::new_unchecked(x, y);
 
             let _ = BandersnatchConfig::serialize_with_mode(&aff, &mut bytes[i][..], ark_serialize::Compress::No);
@@ -209,9 +175,7 @@ impl Element {
     }
 
     #[inline]
-    pub fn serialize_map_to_field_batch(es :&[EdwardsProjective]) -> Vec<[u8; 32]> {
-        // The modification principle comes from go-ipa(https://github.com/crate-crypto/go-ipa)
-
+    pub fn serialize_map_to_field_batch(es :&[Element]) -> Vec<[u8; 32]> {
         let mut bytes = vec![[0 as u8; 32]; es.len()];
         let mut yi_mul = vec![<BandersnatchConfig as CurveConfig>::BaseField::ZERO; es.len()];
         let mut zeros = vec![false; es.len()];
@@ -220,11 +184,11 @@ impl Element {
         //ys_mul = 1*y1*y2*y3.....
         //yi_mul[i] = 1*y1...yi-1
         for i in 0..es.len() {
-            if es[i].y.is_zero() {
+            if es[i].0.y.is_zero() {
                 zeros[i] = true;
             }
             yi_mul[i] = ys_mul;
-            ys_mul = ys_mul * &es[i].y;
+            ys_mul = ys_mul * &es[i].0.y;
         }
 
         // ys_inv = 1/y1*y2*y3.....
@@ -236,17 +200,12 @@ impl Element {
             }
             // y_inv = (y1*y2*z3..yi-1)/(y1*y2*y3..yi)
             let y_inv = yi_mul[i] * &ys_inv;
-            ys_inv = ys_inv * &es[i].y;
+            ys_inv = ys_inv * &es[i].0.y;
 
-            let x = es[i].x * &y_inv;
+            let x = es[i].0.x * &y_inv;
             let _ = x.serialize_uncompressed(&mut bytes[i][..]);
         }
         bytes
-    }
-
-    #[inline]
-    pub fn base(&self) -> EdwardsProjective {
-        self.0
     }
 
     pub fn from_bytes_unchecked_uncompressed(bytes: [u8; 64]) -> Self {
@@ -289,7 +248,6 @@ impl Element {
     }
 
     pub fn prime_subgroup_generator() -> Element {
-        //let a=EdwardsProjective::generator();
         Element(EdwardsProjective::generator())
     }
 
@@ -436,17 +394,12 @@ mod tests {
 
 #[cfg(test)]
 mod test {
+    use ark_ff::AdditiveGroup;
     use super::*;
     // Two torsion point, *not*  point at infinity {0,-1,0,1}
-    /// 返回一个二阶点（two-torsion point），即其两倍为无穷远点。
     fn two_torsion() -> EdwardsProjective {
         EdwardsProjective::new_unchecked(Fq::zero(), -Fq::one(), Fq::zero(), Fq::one())
     }
-
-    /// 返回两个无穷远点。
-    ///
-    /// # 说明
-    /// 这些点的 Z 坐标为 0，因此在仿射坐标系中表示无穷远点。
     fn points_at_infinity() -> [EdwardsProjective; 2] {
         let d = BandersnatchConfig::COEFF_D;
         let a = BandersnatchConfig::COEFF_A;
@@ -457,6 +410,7 @@ mod test {
 
         [p1, p2]
     }
+
     #[test]
     fn fixed_test_vectors() {
         let expected_bit_string = [
@@ -491,113 +445,55 @@ mod test {
 
     #[test]
     fn ser_der_roundtrip() {
-        // 获取 Edwards 曲线的生成点
         let point = EdwardsProjective::generator();
 
-        // 获取一个二阶点（two-torsion point）
         let two_torsion_point = two_torsion();
 
-        // 创建一个 Element 实例，包含生成点
         let element1 = Element(point);
-        // 将 element1 序列化为字节数组
         let bytes1 = element1.to_bytes();
 
-        // 创建另一个 Element 实例，包含生成点和二阶点的和
         let element2 = Element(point + two_torsion_point);
-        // 将 element2 序列化为字节数组
         let bytes2 = element2.to_bytes();
 
-        // 确保两个序列化后的字节数组相等
         assert_eq!(bytes1, bytes2);
 
-        // 从字节数组反序列化为 Element 实例
         let got = Element::from_bytes(&bytes1).expect("points are in the valid subgroup");
 
-        // 确保反序列化后的 Element 实例与原始实例相等
         assert!(got == element1);
         assert!(got == element2);
     }
     #[test]
-    /// This test checks that points at infinity do not pass the Legendre check.
-    ///
-    /// 该测试检查无穷远点是否通过勒让德检查。
-    ///
-    /// # Explanation
-    /// We cannot use the points at infinity themselves as they have Z=0, which will panic when converting to affine coordinates.
-    /// So we create a point which is the sum of the point at infinity and another point.
-    ///
-    /// # 说明
-    /// 我们不能直接使用无穷远点，因为它们的 Z 坐标为 0，在转换为仿射坐标时会引发 panic。
-    /// 因此，我们创建一个点，该点是无穷远点和另一个点的和。
     fn check_infinity_does_not_pass_legendre() {
-        // Get the first point at infinity
-        // 获取第一个无穷远点
+        // We cannot use the points at infinity themselves
+        // as they have Z=0, which will panic when converting to
+        // affine co-ordinates. So we create a point which is
+        // the sum of the point at infinity and another point
         let point = points_at_infinity()[0];
-
-        // Get the generator point of the Edwards curve
-        // 获取 Edwards 曲线的生成点
         let gen = EdwardsProjective::generator();
-
-        // Create a new point by adding the generator point four times
-        // 通过将生成点加四次来创建一个新点
         let gen2 = gen + gen + gen + gen;
 
-        // Sum the point at infinity and the new point
-        // 将无穷远点和新点相加
         let res = point + gen + gen2;
 
-        // Create an Element instance with the resulting point
-        // 使用结果点创建一个 Element 实例
         let element1 = Element(res);
-
-        // Serialize the Element instance to a byte array
-        // 将 Element 实例序列化为字节数组
         let bytes1 = element1.to_bytes();
 
-        // Check if deserialization of the byte array returns a valid Element instance
-        // 检查字节数组的反序列化是否返回有效的 Element 实例
         if Element::from_bytes(&bytes1).is_some() {
-            // If it does, panic with an error message
-            // 如果是，则引发错误信息
             panic!("point contains a point at infinity and should not have passed deserialization")
         }
     }
 
     #[test]
-    /// This test checks the correctness of the two-torsion point and points at infinity.
-    ///
-    /// 该测试检查二阶点和无穷远点的正确性。
-    ///
-    /// # Explanation
-    /// A two-torsion point is a point that, when doubled, results in the point at infinity.
-    /// Points at infinity have a Z coordinate of 0, which means they represent points at infinity in affine coordinates.
-    ///
-    /// # 说明
-    /// 二阶点是指当其倍加时结果为无穷远点的点。
-    /// 无穷远点的 Z 坐标为 0，这意味着它们在仿射坐标系中表示无穷远点。
     fn two_torsion_correct() {
-        // Get the two-torsion point
-        // 获取二阶点
         let two_torsion_point = two_torsion();
-        // Ensure the two-torsion point is not zero
-        // 确保二阶点不为零
         assert!(!two_torsion_point.is_zero());
 
-        // Double the two-torsion point and check if the result is zero (point at infinity)
-        // 将二阶点倍加并检查结果是否为零（无穷远点）
         let result = two_torsion_point.double();
         assert!(result.is_zero());
 
-        // Get the points at infinity
-        // 获取无穷远点
         let [inf1, inf2] = points_at_infinity();
-        // Ensure the points at infinity are not zero
-        // 确保无穷远点不为零
         assert!(!inf1.is_zero());
         assert!(!inf2.is_zero());
 
-        // Double the points at infinity and check if the results are zero (point at infinity)
-        // 将无穷远点倍加并检查结果是否为零（无穷远点）
         assert!(inf1.double().is_zero());
         assert!(inf2.double().is_zero());
     }

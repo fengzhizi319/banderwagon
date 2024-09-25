@@ -1,11 +1,215 @@
-use ark_ec::PrimeGroup;
-//use ark_ed_on_bls12_381_bandersnatch::Fr;
+use ark_ec::{PrimeGroup};
 use ark_ff::{BigInteger, PrimeField, Zero};
 use ark_std::vec::Vec;
-use crate::Element;
+use crate::element::Element;
+use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective, Fq};
+use rayon::prelude::*;
+use crate::Fr;
+
+
+#[derive(Clone, Debug)]
+pub struct MSMExtendPrecompWnaf {
+    window_size: usize,
+    tables: Vec<Vec<ExtendPoint>>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ExtendPoint {
+    pub x: Fq,
+    pub y: Fq,
+    //pub t: Fq,
+}
+
+extern "C" {
+    fn fr_add(res: &mut [u64; 4], a: &[u64; 4], b: &[u64; 4]);
+    fn mul_by_5(res: &mut [u64; 4]);
+    fn fr_mul(res: &mut [u64; 4], a: &[u64; 4], b: &[u64; 4]);
+}
+
+impl MSMExtendPrecompWnaf {
+    pub fn new(bases: &[Element], window_size: usize) -> MSMExtendPrecompWnaf {
+        let wnaf_context = WnafContext::new(window_size);
+
+        let r = MSMExtendPrecompWnaf {
+            tables: bases.par_iter().map(|base|{
+                wnaf_context.extend_table(base.0)
+            }).collect(),
+            window_size,
+        };
+
+        r
+    }
+
+    pub fn mul_index(&self, scalar: Fr, index: usize) -> Element {
+        let wnaf_context = WnafContext::new(self.window_size);
+        Element(
+            wnaf_context
+                .mul_with_extend_table(&self.tables[index], &scalar),
+        )
+    }
+
+    pub fn mul_index_inline(&self, scalar: Fr, index: usize) -> Element {
+        let wnaf_context = WnafContext::new(self.window_size);
+        Element(
+            wnaf_context
+                .mul_with_extend_table_inline(&self.tables[index], &scalar),
+        )
+    }
+
+    pub fn fr_asm_mul(a: &[Fq], b: &[Fq]) -> EdwardsProjective  {
+        let mut result = EdwardsProjective::zero();
+        a.iter().zip(b.iter()).for_each(|(a, b)| {
+            unsafe { fr_mul(&mut result.x.0.0, &a.0.0, &b.0.0) };
+        });
+        result
+    }
+
+    pub fn fr_asm_mul_inline(a: &[Fq], b: &[Fq]) -> EdwardsProjective  {
+        let mut result = EdwardsProjective::zero();
+        a.iter().zip(b.iter()).for_each(|(a, b)| {
+            asm_mul(&mut result.x.0.0, &a.0.0, &b.0.0);
+        });
+        result
+    }
+
+    pub fn fr_mul_x(a: &[Fq], b: &[Fq]) -> EdwardsProjective  {
+        let mut result = EdwardsProjective::zero();
+        a.iter().zip(b.iter()).for_each(|(a, b)| {
+            result.x = a * b;
+        });
+        result
+    }
+
+    pub fn fr_mul_iseq(a: &[Fq], b: &[Fq]) -> bool  {
+        for i in 0..a.len() {
+            let mut _cmp_b = Fq::default();
+            let mut _cmp_c = Fq::default();
+            let _cmp_a = a[i] * b[i];
+
+            unsafe { fr_mul(&mut _cmp_b.0.0, &a[i].0.0, &b[i].0.0) };
+            if _cmp_b != _cmp_a {
+                println!("Error _cmp_b : {:?} != {:?}", _cmp_b.0.0, _cmp_a.0.0);
+                return false;
+            }
+            asm_mul(&mut _cmp_c.0.0, &a[i].0.0, &b[i].0.0);
+            if _cmp_c != _cmp_a {
+                println!("Error _cmp_c : {:?} != {:?}", _cmp_c.0.0, _cmp_a.0.0);
+                return false;
+            }
+
+        }
+        true
+    }
+
+    pub fn ecc_asm_mul(&self, a: &[Fr]) -> Element {
+        let mut res: Element = Element::zero();
+        for i in 0..a.len() {
+            res = self.mul_index(a[i], i%256);
+        }
+        res
+    }
+
+    pub fn fix_ecc_asm_mul(&self, _a: &[Fr]) -> Element {
+        let mut res: Element = Element::zero();
+
+        use std::str::FromStr;
+
+        let scalars = vec![
+            Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap()
+        ];
+
+        for _i in 0.._a.len() {
+            res = self.mul_index(scalars[0], 0);
+        }
+        res
+    }
+
+    pub fn fixg_ecc_asm_mul(&self, _a: &[Fr]) -> Element {
+        let mut res: Element = Element::zero();
+
+        for _i in 0.._a.len() {
+            res = self.mul_index(_a[_i], 0);
+        }
+        res
+    }
+
+    pub fn ecc_asm_mul_inline(&self, a: &[Fr]) -> Element {
+        let mut res: Element = Element::zero();
+        for i in 0..a.len() {
+            res = self.mul_index_inline(a[i], i%256);
+        }
+        res
+    }
+
+    pub fn fix_ecc_asm_mul_inline(&self, _a: &[Fr]) -> Element {
+        let mut res: Element = Element::zero();
+        use std::str::FromStr;
+
+        let scalars = vec![
+            Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap()
+        ];
+
+        for _i in 0.._a.len() {
+            res = self.mul_index_inline(scalars[0], 0);
+        }
+        res
+    }
+
+    pub fn fixg_ecc_asm_mul_inline(&self, _a: &[Fr]) -> Element {
+        let mut res: Element = Element::zero();
+
+        for _i in 0.._a.len() {
+            res = self.mul_index_inline(_a[_i], 0);
+        }
+        res
+    }
+
+    pub fn asm_ffi_ecc_add(&self, l: usize) -> EdwardsProjective {
+        let mut result = EdwardsProjective::zero();
+        let vl = self.tables[0].len();
+        for i in 0..l {
+            extended_add_2d(&mut result, &self.tables[i%256][i%vl]);
+        }
+        result
+    }
+
+    pub fn asm_inline_ecc_add(&self, l: usize) -> EdwardsProjective {
+        let mut result = EdwardsProjective::zero();
+        let vl = self.tables[0].len();
+        for i in 0..l {
+            extended_add_2d_inline(&mut result, &self.tables[i%256][i%vl]);
+        }
+        result
+    }
+
+    /*pub fn mul(&self, scalars: &[Fr]) -> Element {
+        let wnaf_context = WnafContext::new(self.window_size);
+        let result: EdwardsProjective = scalars
+            .iter()
+            .zip(self.tables.iter())
+            .filter(|(scalar, _)| !scalar.is_zero())
+            .map(|(scalar, table)| wnaf_context.mul_with_table(table, scalar).unwrap())
+            .sum();
+
+        Element(result)
+    }
+    // TODO: This requires more benchmarking and feedback to see if we should
+    // TODO put this behind a config flag
+    pub fn mul_par(&self, scalars: &[Fr]) -> Element {
+        let wnaf_context = WnafContext::new(self.window_size);
+        let result: EdwardsProjective = scalars
+            .par_iter()
+            .zip(self.tables.par_iter())
+            .filter(|(scalar, _)| !scalar.is_zero())
+            .map(|(scalar, table)| wnaf_context.mul_with_table(table, scalar).unwrap())
+            .sum();
+
+        Element(result)
+    }*/
+}
 
 /// A helper type that contains all the context required for computing
-/// a window NAF multiplication of a PrimeGroup element by a scalar.
+/// a window NAF multiplication of a group element by a scalar.
 pub struct WnafContext {
     pub window_size: usize,
 }
@@ -23,29 +227,28 @@ impl WnafContext {
     }
 
     pub fn table<G: PrimeGroup>(&self, mut base: G) -> Vec<G> {
-        let window_count = (256 + self.window_size - 1) / self.window_size; // 等价于 ceil(256 / self.window_size)
-        let table_size = window_count * (1 << (self.window_size - 1));
-        let mut table = Vec::with_capacity(table_size);
-        let threshold = 1 << (self.window_size - 1);
+        let win_num = (256 + self.window_size - 1) / self.window_size;
+        let mut table = Vec::with_capacity(win_num * (1 << (self.window_size - 1)));
+        let half_size = 1 << (self.window_size - 1);
 
-        for _ in 0..window_count {
-            // 初始化 current_base 为 base
-            let mut current_base = base;
-            // 遍历窗口中的元素,table中为G,2G,3G,...,2^(window_size-1)G
-            table.push(current_base);
-            for _ in 1..threshold {
-                current_base += &base;
-                // 将 current_base 添加到表中
-                table.push(current_base);
+        for _ in 0..win_num {
+            let dbl = base;
+            table.push(base);
+            for _i in 1..half_size {
+                base += &dbl;
+                table.push(base);
             }
-            //2^(window_size-1)G+2^(window_size-1)G=2^(window_size)G
-            base = current_base + current_base;
+            base += base;
         }
-        // 返回预计算表
+
         table
     }
 
-    /// Computes scalar multiplication of a PrimeGroup element `g` by `scalar`.
+    pub fn extend_table(&self, base: EdwardsProjective) -> Vec<ExtendPoint> {
+        Element::batch_extended_point_normalized(&self.table(base))
+    }
+
+    /// Computes scalar multiplication of a group element `g` by `scalar`.
     ///
     /// This method uses the wNAF algorithm to perform the scalar
     /// multiplication; first, it uses `Self::table` to calculate an
@@ -56,99 +259,615 @@ impl WnafContext {
         self.mul_with_table(&table, scalar).unwrap()
     }
 
+    pub fn mul_with_extend_table(&self, base_table: &[ExtendPoint], scalar: &Fr) -> EdwardsProjective {
+        let data = WnafContext::to_extend_scalar_data(scalar, self.window_size);
+
+        let mut c = 0;
+        let half_size = 1<<(self.window_size-1);
+        let mut result = EdwardsProjective::zero();
+
+        for i in 0..data.len() {
+            let mut idx = (data[i] + c) as usize;
+            if idx == 0 { continue; }
+
+            c = 0;
+            if idx > half_size {
+                idx = (1 << self.window_size) - idx;
+                if idx != 0 {
+                    let neg_point = ExtendPoint {
+                        x: -base_table[idx-1+i*half_size].x,
+                        y: base_table[idx-1+i*half_size].y,
+                        //t: -base_table[idx-1+i*half_size].t,
+                    };
+                    extended_add_2d(&mut result, &neg_point);
+                }
+                c = 1;
+            } else {
+                extended_add_2d(&mut result, &base_table[idx-1+i*half_size]);
+            }
+        }
+        result
+    }
+
+
+    pub fn mul_with_extend_table_inline(&self, base_table: &[ExtendPoint], scalar: &Fr) -> EdwardsProjective {
+        let data = WnafContext::to_extend_scalar_data(scalar, self.window_size);
+
+        let mut c = 0;
+        let half_size = 1<<(self.window_size-1);
+        let mut result = EdwardsProjective::zero();
+
+        for i in 0..data.len() {
+            let mut idx = (data[i] + c) as usize;
+            if idx == 0 { continue; }
+
+            c = 0;
+            if idx > half_size {
+                idx = (1 << self.window_size) - idx;
+                if idx != 0 {
+                    let neg_point = ExtendPoint {
+                        x: -base_table[idx-1+i*half_size].x,
+                        y: base_table[idx-1+i*half_size].y,
+                        //t: -base_table[idx-1+i*half_size].t,
+                    };
+                    extended_add_2d_inline(&mut result, &neg_point);
+                }
+                c = 1;
+            } else {
+                extended_add_2d_inline(&mut result, &base_table[idx-1+i*half_size]);
+            }
+        }
+        result
+    }
+
+    /// Computes scalar multiplication of a group element by `scalar`.
+    /// `base_table` holds precomputed multiples of the group element; it can be
+    /// generated using `Self::table`. `scalar` is an element of
+    /// `G::ScalarField`.
+    ///
+    /// Returns `None` if the table is too small.
+
     pub fn mul_with_table<G: PrimeGroup>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
-        // 检查 base_table 是否太小
         if 1 << (self.window_size - 1) > base_table.len() {
             return None;
         }
+        // The modification principle comes from go-ipa(https://github.com/crate-crypto/go-ipa)
+        let data = WnafContext::to_scalar_data::<G>(scalar, self.window_size);
 
-        // 将标量转换为 wNAF 数据
-        let wnaf_data = WnafContext::scalar_to_wnaf_data::<G>(scalar, self.window_size);
-
-        let pre_comp_size = 1 << (self.window_size - 1);
+        let mut c = 0;
+        let thr = 1<<(self.window_size-1);
         let mut result = G::zero();
-        // 遍历 wNAF 数据
-        for (i, &wnaf_value) in wnaf_data.iter().enumerate() {
-            if wnaf_value < 0 {
-                let element = base_table[(-wnaf_value - 1) as usize + i * pre_comp_size];
-                result -= element;
-            } else if wnaf_value > 0 {
-                // 计算正索引并更新结果
-                let element = base_table[(wnaf_value - 1) as usize + i * pre_comp_size];
-                result += element;
+
+        for i in 0..data.len() {
+            let mut idx = (data[i] + c) as usize;
+            if idx == 0 { continue; }
+
+            c = 0;
+            if idx > thr {
+                idx = (1 << self.window_size) - idx;
+                if idx != 0 {
+                    result -= &base_table[idx-1+i*thr];
+                }
+                c = 1;
+            } else {
+                result += &base_table[idx-1+i*thr];
             }
         }
-        // 返回结果
         Some(result)
     }
 
-    fn scalar_to_wnaf_data<G: PrimeGroup>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
-        // 将标量转换为 u64 向量，蒙哥马利域转为整数域
-        let source = WnafContext::scalar_to_u64::<G>(scalar);
-        // mask用来异或取最低的w位
-        let mask = (1 << w) - 1;
-        // 创建一个空向量来存储 wNAF 数据
-        let mut win_data = vec![];
-        // 初始化偏移量为窗口大小
+    #[inline]
+    fn to_scalar_data<G: PrimeGroup>(scalar: &G::ScalarField, w: usize) -> Vec<u64> {
+        let source = WnafContext::to_u64::<G>(scalar);
+        let mask = (1<<w) -1;
+        let mut data = vec![];
         let mut off = w;
 
-        // 遍历源向量
         for i in 0..source.len() {
-            // 如果偏移量不等于窗口大小，更新数据向量的最后一个元素
             let s = if off != w {
-                let mask = (1 << (w - off)) - 1;
-                let j = win_data.len() - 1;
-                win_data[j] += (source[i] & mask) << off;
+                let mask = (1<<(w-off)) - 1;
+                let j = data.len() - 1;
+                data[j] += (source[i] & mask) << off;
                 (source[i] >> (w - off), 64 - w + off)
             } else {
                 (source[i], 64)
             };
 
-            // 以窗口大小为步长遍历剩余的位
             for j in (0..s.1).step_by(w) {
-                // 提取窗口值并将其推入数据向量
-                let d = (s.0 >> j) & mask;
-                win_data.push(d);
+                let d = (s.0>>j)& mask;
+                data.push(d);
                 off = j;
             }
-            // 更新偏移量
             off = s.1 - off;
         }
 
-        // 把 win_data 变成 <i64>
-        let mut data: Vec<i64> = win_data.iter().map(|&x| x as i64).collect();
-        let threshold = 1 << (w - 1);
 
-        // 遍历 data，处理进位和负值
-        for i in 0..data.len() {
-            if data[i] >= threshold {
-                data[i] -= 1 << w;
-                if i + 1 < data.len() {
-                    data[i + 1] += 1;
-                } else {
-                    data.push(1);
-                }
-            }
-        }
-
-        // 返回 wNAF 数据向量
         data
     }
+
     #[inline]
-    fn scalar_to_u64<G: PrimeGroup>(scalar: &G::ScalarField) -> Vec<u64> {
+    fn to_extend_scalar_data(scalar: &Fr, w: usize) -> Vec<u64> {
+        let source = scalar.into_bigint().0;
+        let mask = (1<<w) -1;
+        let mut data = vec![];
+        let mut off = w;
+
+        for i in 0..source.len() {
+            let s = if off != w {
+                let mask = (1<<(w-off)) - 1;
+                let j = data.len() - 1;
+                data[j] += (source[i] & mask) << off;
+                (source[i] >> (w - off), 64 - w + off)
+            } else {
+                (source[i], 64)
+            };
+
+            for j in (0..s.1).step_by(w) {
+                let d = (s.0>>j)& mask;
+                data.push(d);
+                off = j;
+            }
+            off = s.1 - off;
+        }
+
+
+        data
+    }
+
+    #[inline]
+    fn to_u64<G: PrimeGroup>(scalar: &G::ScalarField) -> Vec<u64> {
         let b = scalar.into_bigint();
         let mut num = b.num_bits();
-        num = if num & 63 == 0 {
+        num = if num & 63 == 0{
             num >> 6
         } else {
             (num >> 6) + 1
         };
 
-        let mut res = Vec::with_capacity(num as usize);
-        res.extend_from_slice(&b.as_ref()[..num as usize]);
+        let mut res = vec![0u64; num as usize];
+        for i in 0..res.len() {
+            res[i] = b.as_ref()[i];
+        }
         res
     }
 }
+
+pub fn extended_neg(p: &ExtendPoint) -> ExtendPoint {
+    ExtendPoint {
+        x: -p.x,
+        y: p.y,
+        //t: -p.t,
+    }
+}
+
+pub fn extended_add_2d_inline(result: &mut EdwardsProjective, p2: &ExtendPoint) {
+    let mut a = Fq::default();
+    let mut b = Fq::default();
+    let mut c = Fq::default();
+    let mut tmp = Fq::default();
+
+    asm_mul(&mut c.0.0, &p2.x.0.0, &p2.y.0.0);
+
+    asm_mul(&mut a.0.0, &result.x.0.0, &p2.x.0.0);
+    asm_mul(&mut b.0.0, &result.y.0.0, &p2.y.0.0);
+    //asm_mul(&mut tmp.0.0, &result.t.0.0, &p2.t.0.0);
+    asm_mul(&mut tmp.0.0, &result.t.0.0, &c.0.0);
+
+    asm_mul(&mut c.0.0, &tmp.0.0, &[12167860994669987632u64, 4043113551995129031u64, 6052647550941614584u64, 3904213385886034240u64]);
+    asm_mul(&mut tmp.0.0, &(result.x + result.y).0.0, &(p2.x + p2.y).0.0);
+    let e = tmp - a - b;
+    let f = result.z - c;
+    let g = result.z + c;
+    unsafe { mul_by_5(&mut a.0.0) };
+    let h = b + a;
+    asm_mul(&mut result.x.0.0, &e.0.0, &f.0.0);
+    asm_mul(&mut result.y.0.0, &g.0.0, &h.0.0);
+    asm_mul(&mut result.t.0.0, &e.0.0, &h.0.0);
+    asm_mul(&mut result.z.0.0, &f.0.0, &g.0.0);
+}
+
+pub fn extended_add_2d(result: &mut EdwardsProjective, p2: &ExtendPoint) {
+    let mut a = Fq::default();
+    let mut b = Fq::default();
+    let mut c = Fq::default();
+    let mut tmp = Fq::default();
+    //calculate t
+    unsafe { fr_mul(&mut c.0.0, &p2.x.0.0, &p2.y.0.0) };
+    //let a = result.x * p2.x;
+    unsafe { fr_mul(&mut a.0.0, &result.x.0.0, &p2.x.0.0) };
+
+    //let b = result.y * p2.y;
+    unsafe { fr_mul(&mut b.0.0, &result.y.0.0, &p2.y.0.0) };
+
+    //let c = result.t * p2.t;
+    //unsafe { fr_mul(&mut tmp.0.0, &result.t.0.0, &p2.t.0.0) };
+    unsafe { fr_mul(&mut tmp.0.0, &result.t.0.0, &c.0.0) };
+
+    //let mut d_c = Fq::default();
+    //d_c.0.0 = [12167860994669987632u64, 4043113551995129031u64, 6052647550941614584u64, 3904213385886034240u64];
+    //let c = c * d_c;
+
+    unsafe { fr_mul(&mut c.0.0, &tmp.0.0, &[12167860994669987632u64, 4043113551995129031u64, 6052647550941614584u64, 3904213385886034240u64]) };
+
+    //let d = result.z;
+
+    //let tmp = result.x + result.y;
+    //let mut e = p2.x + p2.y;
+    //e = e * tmp - a - b;
+    unsafe { fr_mul(&mut tmp.0.0, &(result.x + result.y).0.0, &(p2.x + p2.y).0.0) };
+    let e = tmp - a - b;
+
+    let f = result.z - c;
+
+    let g = result.z + c;
+
+    //let h = -a;
+    //let h_mul_by_5 = h * Fq::from(5u64);
+    //let h = b - h_mul_by_5;
+    unsafe { mul_by_5(&mut a.0.0) };
+
+    let h = b + a;
+
+    //result.x = e * f;
+    unsafe { fr_mul(&mut result.x.0.0, &e.0.0, &f.0.0) };
+    //println!("ax {:?}", result.x.0.0); //ax [11263135436132592868, 16380222789396204840, 265672958677140400, 1080725393601644686]
+    //result.y = g * h;
+    unsafe { fr_mul(&mut result.y.0.0, &g.0.0, &h.0.0) };
+    //println!("ay {:?}", result.y.0.0); //ay [16929979193753380128, 11289447262915390539, 6404279535991601865, 6514005977447446075]
+    //result.t = e * h;
+    unsafe { fr_mul(&mut result.t.0.0, &e.0.0, &h.0.0) };
+    //println!("at {:?}", result.t.0.0); //at [8041554257280657769, 17492341825778612391, 15317427848265567591, 2085175354211983811]
+    //result.z = f * g;
+    unsafe { fr_mul(&mut result.z.0.0, &f.0.0, &g.0.0) };
+    //println!("az {:?}", result.z.0.0); //az [2924513684221029011, 12405931109110048374, 3236999531136880018, 5137933263988462555]
+
+}
+
+
+use std::arch::asm;
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+struct Uint256 {
+    data: [u64; 4],
+}
+
+const Q: [u64; 4] = [
+    0xffffffff00000001,
+    0x53bda402fffe5bfe,
+    0x3339d80809a1d805,
+    0x73eda753299d7d48,
+];
+
+const Q_INV: u64 = 0xfffffffeffffffff;
+
+#[inline(always)]
+pub fn asm_mul(result: &mut [u64; 4], x: &[u64; 4], y: &[u64; 4]) {
+
+    unsafe {
+        asm!(
+            "push %r15",
+            "push %r14",
+            "push %r13",
+            "push %r12",
+            "push %rbp",
+            "push %rcx",
+            "push %rbx",
+
+            // x -> rsi, y -> rdx, z -> rdi
+            "movq %rdi, %r12",     // save res ptr
+            "movq 0(%rsi), %rdi",
+            "movq 8(%rsi), %r8",
+            "movq 16(%rsi), %r9",
+            "movq 24(%rsi), %r10",
+
+            "movq %r12, %rsi",     // restore res ptr
+            "movq %rdx, %r11",
+
+            // clear the flags
+            "xorq %rax, %rax",
+            "movq 0(%r11), %rdx",
+
+            // (A,t[0])  := x[0]*y[0] + A
+            "mulxq %rdi, %r14, %r13",
+
+            // (A,t[1])  := x[1]*y[0] + A
+            "mulxq %r8, %rax, %rcx",
+            "adoxq %rax, %r13",
+
+            // (A,t[2])  := x[2]*y[0] + A
+            "mulxq %r9, %rax, %rbx",
+            "adoxq %rax, %rcx",
+
+            // (A,t[3])  := x[3]*y[0] + A
+            "mulxq %r10, %rax, %rbp",
+            "adoxq %rax, %rbx",
+
+            // A += carries from ADCXQ and ADOXQ
+            "movq $0, %rax",
+            "adoxq %rax, %rbp",
+
+            // m := t[0]*q'[0] mod W
+            "movq ${q_inv}, %rdx",
+            "imulq %r14, %rdx",
+
+            // clear the flags
+            "xorq %rax, %rax",
+
+            // C,_ := t[0] + m*q[0]
+            "movq ${q0}, %r15",
+            "mulxq %r15, %rax, %r12",
+            "adcxq %r14, %rax",
+            "movq %r12, %r14",
+
+            // (C,t[0]) := t[1] + m*q[1] + C
+            "adcxq %r13, %r14",
+            "movq ${q1}, %r15",
+            "mulxq %r15, %rax, %r13",
+            "adoxq %rax, %r14",
+
+            // (C,t[1]) := t[2] + m*q[2] + C
+            "adcxq %rcx, %r13",
+            "movq ${q2}, %r15",
+            "mulxq %r15, %rax, %rcx",
+            "adoxq %rax, %r13",
+
+            // (C,t[2]) := t[3] + m*q[3] + C
+            "adcxq %rbx, %rcx",
+            "movq ${q3}, %r15",
+            "mulxq %r15, %rax, %rbx",
+            "adoxq %rax, %rcx",
+
+            // t[3] = C + A
+            "movq $0, %rax",
+            "adcxq %rax, %rbx",
+            "adoxq %rbp, %rbx",
+
+            // clear the flags
+            "xorq %rax, %rax",
+            "movq 8(%r11), %rdx",
+
+            // (A,t[0])  := t[0] + x[0]*y[1] + A
+            "mulxq %rdi, %rax, %rbp",
+            "adoxq %rax, %r14",
+
+            // (A,t[1])  := t[1] + x[1]*y[1] + A
+            "adcxq %rbp, %r13",
+            "mulxq %r8, %rax, %rbp",
+            "adoxq %rax, %r13",
+
+            // (A,t[2])  := t[2] + x[2]*y[1] + A
+            "adcxq %rbp, %rcx",
+            "mulxq %r9, %rax, %rbp",
+            "adoxq %rax, %rcx",
+
+            // (A,t[3])  := t[3] + x[3]*y[1] + A
+            "adcxq %rbp, %rbx",
+            "mulxq %r10, %rax, %rbp",
+            "adoxq %rax, %rbx",
+
+            // A += carries from ADCXQ and ADOXQ
+            "movq $0, %rax",
+            "adcxq %rax, %rbp",
+            "adoxq %rax, %rbp",
+
+            // m := t[0]*q'[0] mod W
+            "movq ${q_inv}, %rdx",
+            "imulq %r14, %rdx",
+            // clear the flags
+            "xorq %rax, %rax",
+
+            // C,_ := t[0] + m*q[0]
+            "movq ${q0}, %r15",
+            "mulxq %r15, %rax, %r12",
+            "adcxq %r14, %rax",
+            "movq %r12, %r14",
+
+            // (C,t[0]) := t[1] + m*q[1] + C
+            "adcxq %r13, %r14",
+            "movq ${q1}, %r15",
+            "mulxq %r15, %rax, %r13",
+            "adoxq %rax, %r14",
+
+            // (C,t[1]) := t[2] + m*q[2] + C
+            "adcxq %rcx, %r13",
+            "movq ${q2}, %r15",
+            "mulxq %r15, %rax, %rcx",
+            "adoxq %rax, %r13",
+
+            // (C,t[2]) := t[3] + m*q[3] + C
+            "adcxq %rbx, %rcx",
+            "movq ${q3}, %r15",
+            "mulxq %r15, %rax, %rbx",
+            "adoxq %rax, %rcx",
+
+            // t[3] = C + A
+            "movq $0, %rax",
+            "adcxq %rax, %rbx",
+            "adoxq %rbp, %rbx",
+
+            // clear the flags
+            "xorq %rax, %rax",
+            "movq 16(%r11), %rdx",
+
+            // (A,t[0])  := t[0] + x[0]*y[2] + A
+            "mulxq %rdi, %rax, %rbp",
+            "adoxq %rax, %r14",
+
+            // (A,t[1])  := t[1] + x[1]*y[2] + A
+            "adcxq %rbp, %r13",
+            "mulxq %r8, %rax, %rbp",
+            "adoxq %rax, %r13",
+
+            // (A,t[2])  := t[2] + x[2]*y[2] + A
+            "adcxq %rbp, %rcx",
+            "mulxq %r9, %rax, %rbp",
+            "adoxq %rax, %rcx",
+
+            // (A,t[3])  := t[3] + x[3]*y[2] + A
+            "adcxq %rbp, %rbx",
+            "mulxq %r10, %rax, %rbp",
+            "adoxq %rax, %rbx",
+
+            // A += carries from ADCXQ and ADOXQ
+            "movq  $0, %rax",
+            "adcxq %rax, %rbp",
+            "adoxq %rax, %rbp",
+
+            // m := t[0]*q'[0] mod W
+            "movq ${q_inv}, %rdx",
+            "imulq %r14, %rdx",
+
+            // clear the flags
+            "xorq %rax, %rax",
+
+            // C,_ := t[0] + m*q[0]
+            "movq ${q0}, %r15",
+            "mulxq %r15, %rax, %r12",
+            "adcxq %r14, %rax",
+            "movq  %r12, %r14",
+
+            // (C,t[0]) := t[1] + m*q[1] + C
+            "adcxq %r13, %r14",
+            "movq ${q1}, %r15",
+            "mulxq %r15, %rax, %r13",
+            "adoxq %rax, %r14",
+
+            // (C,t[1]) := t[2] + m*q[2] + C
+            "adcxq %rcx, %r13",
+            "movq ${q2}, %r15",
+            "mulxq %r15, %rax, %rcx",
+            "adoxq %rax, %r13",
+
+            // (C,t[2]) := t[3] + m*q[3] + C
+            "adcxq %rbx, %rcx",
+            "movq ${q3}, %r15",
+            "mulxq %r15, %rax, %rbx",
+            "adoxq %rax, %rcx",
+
+            // t[3] = C + A
+            "movq  $0, %rax",
+            "adcxq %rax, %rbx",
+            "adoxq %rbp, %rbx",
+
+            // clear the flags
+            "xorq %rax, %rax",
+            "movq 24(%r11), %rdx",
+
+            // (A,t[0])  := t[0] + x[0]*y[3] + A
+            "mulxq %rdi, %rax, %rbp",
+            "adoxq %rax, %r14",
+
+            // (A,t[1])  := t[1] + x[1]*y[3] + A
+            "adcxq %rbp, %r13",
+            "mulxq %r8, %rax, %rbp",
+            "adoxq %rax, %r13",
+
+            // (A,t[2])  := t[2] + x[2]*y[3] + A
+            "adcxq %rbp, %rcx",
+            "mulxq %r9, %rax, %rbp",
+            "adoxq %rax, %rcx",
+
+            // (A,t[3])  := t[3] + x[3]*y[3] + A
+            "adcxq %rbp, %rbx",
+            "mulxq %r10, %rax, %rbp",
+            "adoxq %rax, %rbx",
+
+            // A += carries from ADCXQ and ADOXQ
+            "movq  $0, %rax",
+            "adcxq %rax, %rbp",
+            "adoxq %rax, %rbp",
+
+            // m := t[0]*q'[0] mod W
+            "movq ${q_inv}, %rdx",
+            "imulq %r14, %rdx",
+
+            // clear the flags
+            "xorq %rax, %rax",
+
+            // C,_ := t[0] + m*q[0]
+            "movq ${q0}, %r15",
+            "mulxq %r15, %rax, %r12",
+            "adcxq %r14, %rax",
+            "movq  %r12, %r14",
+
+            // (C,t[0]) := t[1] + m*q[1] + C
+            "adcxq %r13, %r14",
+            "movq ${q1}, %r15",
+            "mulxq %r15, %rax, %r13",
+            "adoxq %rax, %r14",
+
+            // (C,t[1]) := t[2] + m*q[2] + C
+            "adcxq %rcx, %r13",
+            "movq ${q2}, %r15",
+            "mulxq %r15, %rax, %rcx",
+            "adoxq %rax, %r13",
+
+            // (C,t[2]) := t[3] + m*q[3] + C
+            "adcxq %rbx, %rcx",
+            "movq ${q3}, %r15",
+            "mulxq %r15, %rax, %rbx",
+            "adoxq %rax, %rcx",
+
+            // t[3] = C + A
+            "movq  $0, %rax",
+            "adcxq %rax, %rbx",
+            "adoxq %rbp, %rbx",
+
+            // reduce element(R14,R13,CX,BX) using temp registers (SI,R12,R11,DI)
+            "movq    %rsi, %rax",
+            "movq    %r14, %rsi",
+            "movq    ${q0}, %r15",
+            "subq    %r15, %r14",
+            "movq    %r13, %r12",
+            "movq    ${q1}, %r15",
+            "sbbq    %r15, %r13",
+            "movq    %rcx, %r11",
+            "movq    ${q2}, %r15",
+            "sbbq    %r15, %rcx",
+            "movq    %rbx, %rdi",
+            "movq    ${q3}, %r15",
+            "sbbq    %r15, %rbx",
+            "cmovc   %rsi, %r14",
+            "cmovc   %r12, %r13",
+            "cmovc   %r11, %rcx",
+            "cmovc   %rdi, %rbx",
+
+            "movq   %r14, 0(%rax)",
+            "movq   %r13, 8(%rax)",
+            "movq   %rcx, 16(%rax)",
+            "movq   %rbx, 24(%rax)",
+
+
+            "pop %rbx",
+            "pop %rcx",
+            "pop %rbp",
+            "pop %r12",
+            "pop %r13",
+            "pop %r14",
+            "pop %r15",
+            inout("rsi") x.as_ptr() => _,
+            inout("rdx") y.as_ptr() => _,
+            inout("rdi") result.as_mut_ptr() => _,
+            q0 = const Q[0],
+            q1 = const Q[1],
+            q2 = const Q[2],
+            q3 = const Q[3],
+            q_inv = const Q_INV,
+            out("rax") _,
+            // out("rcx") _,
+            out("r8") _,
+            out("r9") _,
+            out("r10") _,
+            out("r11") _,
+
+            options(att_syntax),
+            clobber_abi("C")
+        );
+    }
+
+}
+
 pub struct WnafGottiContext {
     pub t: usize,
     pub b: usize,

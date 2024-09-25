@@ -153,7 +153,7 @@ mod tests {
         scalars.push(Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap());
 
 
-        let precompute=MSMExtendPrecompWnaf::new(&basic_crs, 2,4);
+        let precompute=MSMExtendPrecompWnaf::new(&basic_crs, 8);
         let mem_byte_size=precompute.tables.len()*precompute.tables[0].len()*2*32;
         println!("precompute_size: {:?}", mem_byte_size);
         use std::time::Instant;

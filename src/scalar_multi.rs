@@ -9,8 +9,8 @@ use crate::Fr;
 
 #[derive(Clone, Debug)]
 pub struct MSMExtendPrecompWnaf {
-    window_size: usize,
-    tables: Vec<Vec<ExtendPoint>>,
+    pub window_size: usize,
+    pub tables: Vec<Vec<ExtendPoint>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -54,6 +54,18 @@ impl MSMExtendPrecompWnaf {
             wnaf_context
                 .mul_with_extend_table_inline(&self.tables[index], &scalar),
         )
+    }
+
+    pub fn mul(&self, scalars: &[Fr]) -> Element {
+        let wnaf_context = WnafContext::new(self.window_size);
+        let result: EdwardsProjective = scalars
+            .iter()
+            .zip(self.tables.iter())
+            .filter(|(scalar, _)| !scalar.is_zero())
+            .map(|(scalar, table)| wnaf_context.mul_with_extend_table_inline(table, scalar))
+            .sum();
+
+        Element(result)
     }
 
     pub fn fr_asm_mul(a: &[Fq], b: &[Fq]) -> EdwardsProjective  {
@@ -181,6 +193,8 @@ impl MSMExtendPrecompWnaf {
         }
         result
     }
+    
+    
 
     /*pub fn mul(&self, scalars: &[Fr]) -> Element {
         let wnaf_context = WnafContext::new(self.window_size);

@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ark_std::str::FromStr;
 use banderwagon::{Element, msm_gotti::MSMPrecompWnafGotti, Fr};
-use banderwagon::msm::MSMPrecompWnaf;
+use banderwagon::msm_window::MSMPrecompWnaf;
 use sysinfo::{System};
 fn benchmark_gotti_precompute_mul(c: &mut Criterion) {
     let mut system = System::new_all();

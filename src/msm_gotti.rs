@@ -5,7 +5,7 @@ use ark_ec::PrimeGroup;
 //use ark_ff::{BigInteger, PrimeField};
 use ark_std::vec::Vec;
 use crate::Element;
-use crate::salt_msm::WnafGottiContext;
+use crate::scalar_multi::WnafGottiContext;
 #[derive(Clone, Debug)]
 pub struct MSMPrecompWnafGotti {
     pub tables: Vec<Vec<EdwardsProjective>>,
@@ -82,7 +82,7 @@ mod tests {
     use super::*;
     use crate::{ Element};
     use crate::{msm_gotti::MSMPrecompWnafGotti, Fr};
-    use crate::msm::MSMPrecompWnaf;
+    use crate::msm_window::MSMPrecompWnaf;
 
     #[test]
     fn testmain(){

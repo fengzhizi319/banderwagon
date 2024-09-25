@@ -371,7 +371,7 @@ impl WnafGottiContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{try_reduce_to_element, msm::MSMPrecompWnaf, Element, Fr};
+    use crate::{try_reduce_to_element, msm_window::MSMPrecompWnaf, Element, Fr};
 
     use ark_std::rand::SeedableRng;
     use ark_std::UniformRand;

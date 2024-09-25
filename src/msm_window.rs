@@ -1,4 +1,4 @@
-use crate::salt_msm::WnafContext;
+use crate::scalar_multi::WnafContext;
 use ark_ed_on_bls12_381_bandersnatch::{EdwardsProjective, Fr};
 use ark_ff::Zero;
 use rayon::prelude::*;

@@ -5,7 +5,8 @@ use ark_ec::PrimeGroup;
 //use ark_ff::{BigInteger, PrimeField};
 use ark_std::vec::Vec;
 use crate::Element;
-use crate::scalar_multi::WnafGottiContext;
+use crate::scalar_multi::{WnafGottiContext, ExtendPoint};
+
 #[derive(Clone, Debug)]
 pub struct MSMPrecompWnafGotti {
     pub tables: Vec<Vec<EdwardsProjective>>,
@@ -55,6 +56,68 @@ impl MSMPrecompWnafGotti {
             .zip(self.tables.iter())
             .filter(|(scalar, _)| !scalar.is_zero())
             .map(|(scalar, table)| wnaf_gotti_context.mul_with_table(table, scalar).unwrap())
+            .sum();
+
+        Element(result)
+    }
+
+    pub fn gotti_window(&self, scalars: &[Fr]) -> Vec<Vec<u16>> {
+        let wnaf_gotti_context = WnafGottiContext::new(self.t,self.b);
+        let scalar=scalars[0];
+        let result: Vec<Vec<u16>> = wnaf_gotti_context.gotti_window::<EdwardsProjective>(&scalar);
+        result
+    }
+
+}
+
+pub struct MSM2DASMPrecompWnafGotti {
+    pub tables: Vec<Vec<ExtendPoint>>,
+    t:         usize,
+    b:        usize,
+}
+
+impl MSM2DASMPrecompWnafGotti {
+    pub fn fill_window<G: PrimeGroup>(basis: &mut [G], table: &mut [G]) {
+        // 如果 basis 数组为空
+        if basis.is_empty() {
+            // 将 table 数组填充为零元素
+            for i in 0..table.len() {
+                table[i] = G::zero();
+            }
+            return;
+        }
+        let l = table.len();
+        // 递归调用 fill_window，传入去掉第一个元素的 basis 数组和 table 数组的前半部分
+        Self::fill_window(&mut basis[1..], &mut table[.. l/ 2]);
+        // 遍历 table 数组的前半部分
+        for i in 0..l / 2 {
+            // 将 table 数组后半部分的对应元素设置为当前元素与 basis 数组第一个元素的和
+            table[l / 2 + i] = table[i] + basis[0];
+        }
+    }
+
+
+    pub fn new(basis: &[Element], t: usize, b: usize)-> MSM2DASMPrecompWnafGotti {
+        let wnaf_gotti_context = WnafGottiContext::new(t,b);
+
+        // Parallel generation of precompute tables
+        // 并行生成预计算表
+        MSM2DASMPrecompWnafGotti {
+            tables: basis.par_iter().map(|base|{
+                Element::batch_extended_point_normalized(&wnaf_gotti_context.table(base.0))
+            }).collect(),
+            t,
+            b
+        }
+    }
+
+    pub fn mul(&self, scalars: &[Fr]) -> Element {
+        let wnaf_gotti_context = WnafGottiContext::new(self.t,self.b);
+        let result: EdwardsProjective = scalars
+            .iter()
+            .zip(self.tables.iter())
+            .filter(|(scalar, _)| !scalar.is_zero())
+            .map(|(scalar, table)| wnaf_gotti_context.mul_with_table_2dasm(table, scalar).unwrap())
             .sum();
 
         Element(result)

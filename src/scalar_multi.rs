@@ -920,6 +920,21 @@ impl WnafGottiContext {
         res.extend_from_slice(&b.as_ref()[..num as usize]);
         res
     }
+    
+    fn fr_to_u64(scalar: &Fr) -> Vec<u64> {
+        let b = scalar.into_bigint();
+        let mut num = b.num_bits();
+        num = if num & 63 == 0 {
+            num >> 6
+        } else {
+            (num >> 6) + 1
+        };
+
+        let mut res = Vec::with_capacity(num as usize);
+        res.extend_from_slice(&b.as_ref()[..num as usize]);
+        res
+    }
+    
     pub(crate) fn gotti_window<G: PrimeGroup>(&self, scalar: &G::ScalarField) -> Vec<Vec<u16>> {
         let b = scalar.into_bigint();
         let mut num = b.num_bits();
@@ -1082,6 +1097,61 @@ impl WnafGottiContext {
 
         Some(accum)
     }
+
+
+    pub fn mul_with_table_2dasm(&self, base_pre_table: &[ExtendPoint], mon_scalar: &Fr) -> Option<EdwardsProjective> {
+        if 1 << (self.b - 1) > base_pre_table.len() {
+            return None;
+        }
+
+        let window_size = 1 << self.b;
+        let mut accum = EdwardsProjective::zero();
+        let fr_bits = 253;
+        let scalar_u64 = WnafGottiContext::fr_to_u64(mon_scalar);
+
+        for t_i in 0..self.t {
+            if t_i > 0 {
+                accum += accum;
+            }
+
+            let mut curr_window = 0;
+            let mut window_scalar = 0;
+            let mut window_bit_pos = 0;
+
+            for k in (0..fr_bits).step_by(self.t) {
+                let scalar_bit_pos = k + self.t - t_i - 1;
+
+                if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
+                    let limb = scalar_u64[scalar_bit_pos >> 6];
+                    let bit = (limb >> (scalar_bit_pos & 63)) & 1;
+                    window_scalar |= (bit as usize) << (window_bit_pos);
+                }
+
+                window_bit_pos += 1;
+                if window_bit_pos == self.b {
+                    if window_scalar > 0 {
+                        let window_precomp = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
+                        //accum += window_precomp[window_scalar];
+                        
+                        extended_add_2d(&mut accum, &window_precomp[window_scalar]);
+                        
+                    }
+                    curr_window += 1;
+                    window_scalar = 0;
+                    window_bit_pos = 0;
+                }
+            }
+
+            if window_scalar > 0 {
+                let window_slice = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
+                //accum += window_slice[window_scalar];
+                extended_add_2d(&mut accum, &window_slice[window_scalar]);
+            }
+        }
+
+        Some(accum)
+    }
+
 
 
 }

@@ -25,6 +25,11 @@ ark-ff-asm = "0.5.0-alpha.0"
 [dev-dependencies]
 hex = "0.4.3"
 
+
+[build-dependencies]
+cc = "1.1.18"
+
+
 [features]
 default = ["parallel"]
 parallel = ["ark-ff/parallel", "ark-ff/asm", "ark-ec/parallel"]

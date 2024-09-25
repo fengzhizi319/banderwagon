@@ -56,14 +56,6 @@ impl WnafContext {
         self.mul_with_table(&table, scalar).unwrap()
     }
 
-    /// Computes scalar multiplication of a PrimeGroup element by `scalar`.
-    /// `base_table` holds precomputed multiples of the PrimeGroup element; it can be
-    /// generated using `Self::table`. `scalar` is an element of
-    /// `G::ScalarField`.
-    ///
-    /// Returns `None` if the table is too small.
-
-
     pub fn mul_with_table<G: PrimeGroup>(&self, base_table: &[G], scalar: &G::ScalarField) -> Option<G> {
         // 检查 base_table 是否太小
         if 1 << (self.window_size - 1) > base_table.len() {
@@ -189,189 +181,13 @@ impl WnafGottiContext {
     }
 
 
-    //pub fn table<G: PrimeGroup>(&self,mut base: G) -> Vec<G>
-    pub fn table<G: PrimeGroup>(&self,base: G)-> Vec<G> {
-
-        let fr_bits =253;
-        //b为窗口bit长度，t为预处理的倍数，window_size为每个窗口内的值的所有可能的值
-        let window_size = 1 << self.b;
-        //用t把标量分为t个部分，如果t=2，那么标量分为2部分，每部分的位数为fr_bits/2，kP=2A1+A0，
-        // A1为高位，A0为低位，A1，A0即为划分出来的部分。A1、A0的所有可能的个数为points_per_column，
-        // 如t=2，b=5，那么points_per_column=127
-        let points_per_column = (fr_bits + self.t - 1) / self.t as usize;
-        //窗口的个数
-        let window_count = (points_per_column + self.b - 1) / self.b; // 等价于 ceil(256 / self.window_size)
-        //let table_size = window_count * (1 << (self.b - 1));
-        //let threshold = 1 << (self.b - 1);
-        let mut table_basis = Vec::with_capacity(points_per_column);
-        let mut dbl = base.clone();
-        table_basis.push(base);
-        //计算2^0*G,2^2*G,2^4*G,2^6*G,...,2^252*G
-        for _i in 1..(points_per_column) {
-            for _j in 0..self.t {
-                dbl= dbl.double();
-            }
-            table_basis.push(dbl.clone());
-        }
-        let mut nn_table = vec![G::zero(); window_count * window_size];
-        for i in 0..window_count {
-            let w=i;
-            let start = w * self.b as usize;
-            let mut end = (w + 1) * self.b as usize;
-            if end > table_basis.len() {
-                end = table_basis.len();
-            }
-            let window_basis: &mut [G] = &mut table_basis[start..end];
-            let mut table = vec![G::zero(); window_size];
-            self.fill_window(window_basis, &mut *table);
-            for (j, table_element) in table.into_iter().enumerate() {
-                nn_table[w * window_size + j] = table_element;
-            }
-        }
-        nn_table
-    }
 
     pub fn mul<G: PrimeGroup>(&self, g: G, scalar: &G::ScalarField) -> G {
         let table = self.table(g);
         self.mul_with_table(&table, scalar).unwrap()
     }
-    pub fn mul_charles<G: PrimeGroup>(&self, g: G, scalar: &G::ScalarField) -> G {
-        let table = self.table(g);
-        self.mul_with_table_normal(&table, scalar).unwrap()
-    }
-
-    pub fn mul_with_table<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
-        if 1 << (self.b - 1) > base_pre_table.len() {
-            return None;
-        }
-
-        let window_size = 1 << self.b;
-        let mut accum = G::zero();
-        let fr_bits = 253;
-        let scalar_u64 = WnafGottiContext::scalar_to_u64::<G>(mon_scalar);
-
-        for t_i in 0..self.t {
-            if t_i > 0 {
-                accum = accum.double();
-            }
-
-            let mut curr_window = 0;
-            let mut window_scalar = 0;
-            let mut window_bit_pos = 0;
-
-            for k in (0..fr_bits).step_by(self.t) {
-                let scalar_bit_pos = k + self.t - t_i - 1;
-                if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
-                    let limb = scalar_u64[scalar_bit_pos >> 6];
-                    let bit = (limb >> (scalar_bit_pos & 63)) & 1;
-                    window_scalar |= (bit as usize) << (self.b - window_bit_pos - 1);
-                }
-
-                window_bit_pos += 1;
-                if window_bit_pos == self.b {
-                    if window_scalar > 0 {
-                        let window_precomp = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
-                        accum += window_precomp[window_scalar];
-                    }
-                    curr_window += 1;
-                    window_scalar = 0;
-                    window_bit_pos = 0;
-                }
-            }
-
-            if window_scalar > 0 {
-                let window_slice = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
-                accum += window_slice[window_scalar];
-            }
-        }
-
-        Some(accum)
-    }
-    pub fn mul_with_table1<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField)-> Option<G> {
-        // 检查 base_table 是否太小
-        if 1 << (self.b - 1) > base_pre_table.len() {
-            //return None;
-        }
-        // 将标量转换为 wNAF 数据
-        //let scalar = mon_scalar.into_bigint();
-        //let source = WnafGottiContext::scalar_to_u64::<G>(scalar);
-        let window_size = 1 << self.b;
-        let mut accum = G::zero();
-        let mut add_double_count = 0;
-        for t_i in 0..self.t {
-            if t_i > 0 {
-                accum=accum.double();
-                add_double_count += 1;
-            }
-
-            let mut curr_window = 0;
-            let mut window_scalar = 0;
-            let mut window_bit_pos = 0;
-            let fr_bits = 253;
-            let scalar_u64 = WnafGottiContext::scalar_to_u64::<G>(mon_scalar);
-            //let scalar_u64 = crate::salt_msm::WnafContext::scalar_to_wnaf_data::<G>(scalar, self.b);
-
-            let mut k: usize = 0;
-            while k < fr_bits {
-                let scalar_bit_pos = (k + self.t - t_i - 1) as usize;
-                if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
-                    let limb = scalar_u64[scalar_bit_pos >> 6];
-                    let bit = (limb >> (scalar_bit_pos & 63)) & 1;
-                    window_scalar |= (bit as usize) << (self.b as usize - window_bit_pos - 1);
-                }
-
-                window_bit_pos += 1;
-                if window_bit_pos == self.b {
-                    if window_scalar > 0 {
-                        // let t1 = std::time::Instant::now();
-                        // let jiange = t2.elapsed(); // 计算函数执行时间
-
-                        let window_precomp = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
-                        //let t2 = std::time::Instant::now();
-                        let a = window_precomp[window_scalar];
-                        //let takedata = t2.elapsed(); // 计算函数执行时间
-                        // let t1 = std::time::Instant::now();
-                        // let jiange = t2.elapsed(); // 计算函数执行时间
-                        accum+=a;
-                        // let add_time = t1.elapsed(); // 计算函数执行时间
-                        // println!("add time: {:?}", add_time);
-                        //println!("takedata time: {:?}", takedata);
-                        // println!("间隔为: {:?}", jiange);
-                        // t2 = std::time::Instant::now();
-                        add_double_count += 1;
-                    }
-                    curr_window += 1;
-
-                    window_scalar = 0;
-                    window_bit_pos = 0;
-                }
-                k += self.t;
-            }
-            if window_scalar > 0 {
-                let window_slice = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
-                accum+=window_slice[window_scalar];
-                add_double_count += 1;
-            }
-
-        }
-        println!("add_double_count: {:?}", add_double_count);
-        return Some(accum);
-    }
-    pub fn msm_with_multiple_tables<G: PrimeGroup>(&self, base_pre_tables: &[&[G]], mon_scalars: &[&G::ScalarField]) -> Option<Vec<G>> {
-        if base_pre_tables.len() != mon_scalars.len() {
-            return None;
-        }
-
-        let mut results = Vec::with_capacity(mon_scalars.len());
-
-        for (base_pre_table, mon_scalar) in base_pre_tables.iter().zip(mon_scalars.iter()) {
-            let result = self.mul_with_table1(base_pre_table, mon_scalar)?;
-            results.push(result);
-        }
 
 
-        Some(results)
-    }
     fn scalar_to_u64<G: PrimeGroup>(scalar: &G::ScalarField) -> Vec<u64> {
         let b = scalar.into_bigint();
         let mut num = b.num_bits();
@@ -458,7 +274,7 @@ impl WnafGottiContext {
         }
         table1
     }
-    pub fn table_window<G: PrimeGroup>(&self,base: G)-> Vec<G> {
+    pub fn table<G: PrimeGroup>(&self,base: G)-> Vec<G> {
 
         let fr_bits =253;
         //b为窗口bit长度，t为预处理的倍数，window_size为每个窗口内的值的所有可能的值
@@ -499,7 +315,7 @@ impl WnafGottiContext {
         }
         nn_table
     }
-    pub fn mul_with_table_normal<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
+    pub fn mul_with_table<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
         if 1 << (self.b - 1) > base_pre_table.len() {
             return None;
         }
@@ -547,54 +363,7 @@ impl WnafGottiContext {
 
         Some(accum)
     }
-    pub fn mul_with_table_naf<G: PrimeGroup>(&self, base_pre_table: &[G], mon_scalar: &G::ScalarField) -> Option<G> {
-        if 1 << (self.b - 1) > base_pre_table.len() {
-            return None;
-        }
 
-        let window_size = 1 << self.b;
-        let mut accum = G::zero();
-        let fr_bits = 253;
-        let scalar_u64 = WnafGottiContext::scalar_to_u64::<G>(mon_scalar);
-
-        for t_i in 0..self.t {
-            if t_i > 0 {
-                accum = accum.double();
-            }
-
-            let mut curr_window = 0;
-            let mut window_scalar = 0;
-            let mut window_bit_pos = 0;
-
-            for k in (0..fr_bits).step_by(self.t) {
-                let scalar_bit_pos = k + self.t - t_i - 1;
-
-                if scalar_bit_pos < fr_bits && !mon_scalar.is_zero() {
-                    let limb = scalar_u64[scalar_bit_pos >> 6];
-                    let bit = (limb >> (scalar_bit_pos & 63)) & 1;
-                    window_scalar |= (bit as usize) << (window_bit_pos);
-                }
-
-                window_bit_pos += 1;
-                if window_bit_pos == self.b {
-                    if window_scalar > 0 {
-                        let window_precomp = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
-                        accum += window_precomp[window_scalar];
-                    }
-                    curr_window += 1;
-                    window_scalar = 0;
-                    window_bit_pos = 0;
-                }
-            }
-
-            if window_scalar > 0 {
-                let window_slice = &base_pre_table[curr_window * window_size..(curr_window + 1) * window_size];
-                accum += window_slice[window_scalar];
-            }
-        }
-
-        Some(accum)
-    }
 
 }
 
@@ -602,7 +371,7 @@ impl WnafGottiContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{try_reduce_to_element, msm::MSMPrecompWnaf, Element, Fr};
+    use crate::{try_reduce_to_element, msm_window::MSMPrecompWnaf, Element, Fr};
 
     use ark_std::rand::SeedableRng;
     use ark_std::UniformRand;

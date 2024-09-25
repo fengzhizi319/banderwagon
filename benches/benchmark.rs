@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ark_std::str::FromStr;
 use banderwagon::{Element, msm_gotti::MSMPrecompWnafGotti, Fr};
-use banderwagon::msm::MSMPrecompWnaf;
+use banderwagon::msm_window::MSMPrecompWnaf;
 use sysinfo::{System};
 fn benchmark_gotti_precompute_mul(c: &mut Criterion) {
     let mut system = System::new_all();
@@ -25,13 +25,13 @@ fn benchmark_gotti_precompute_mul(c: &mut Criterion) {
 
     for &t in &ts {
         for &b in &bs {
-            let precompute = MSMPrecompWnafGotti::new_window(&basic_crs, t, b);
+            let precompute = MSMPrecompWnafGotti::new(&basic_crs, t, b);
             let mem_byte_size=precompute.tables.len()*precompute.tables[0].len()*4*32;
             println!("precompute_byte_size: {:?}", mem_byte_size);
 
             c.bench_function(&format!("prempute_mul_t{}_b{}", t, b), |b| {
                 b.iter(|| {
-                    let result = precompute.mul_window(black_box(&scalars));
+                    let result = precompute.mul(black_box(&scalars));
                     black_box(result);
                 })
             });
@@ -39,8 +39,11 @@ fn benchmark_gotti_precompute_mul(c: &mut Criterion) {
     }
 }
 fn benchmark_std_precompute_mul(c: &mut Criterion) {
-    let scalars: Vec<Fr> = (0..num_points).map(|_| Fr::rand(&mut rng)).collect();
-    let mut rng = ChaCha20Rng::from_seed([2u8; 32]);
+    let mut system = System::new_all();
+    system.refresh_all();
+    for (i, cpu) in system.cpus().iter().enumerate() {
+        println!("CPU {} frequency: {} MHz", i, cpu.frequency());
+    }
     let basis_num = 1;
     let mut basic_crs = Vec::with_capacity(basis_num);
     for i in 0..basis_num {

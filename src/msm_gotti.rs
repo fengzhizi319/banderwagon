@@ -5,7 +5,7 @@ use ark_ec::PrimeGroup;
 //use ark_ff::{BigInteger, PrimeField};
 use ark_std::vec::Vec;
 use crate::Element;
-use crate::salt_msm::WnafGottiContext;
+use crate::scalar_multi::WnafGottiContext;
 #[derive(Clone, Debug)]
 pub struct MSMPrecompWnafGotti {
     pub tables: Vec<Vec<EdwardsProjective>>,
@@ -33,48 +33,6 @@ impl MSMPrecompWnafGotti {
         }
     }
 
-    pub fn table<G: PrimeGroup>(mut bases: Vec<G>, t: usize, b: usize) -> Vec<Vec<G>> {
-        let fr_bits = 253;
-        let window_size = 1 << b;
-        let points_per_column = (fr_bits + t - 1) / t as usize;
-        let window_count = (points_per_column + b - 1) / b;
-
-        let mut final_nn_table = Vec::new();
-
-        for base in bases.iter_mut() {
-            let mut table_basis = Vec::with_capacity(points_per_column);
-            let mut dbl = base.clone();
-            table_basis.push(base.clone());
-
-            for _i in 1..points_per_column {
-                for _j in 0..t {
-                    dbl = dbl.double();
-                }
-                table_basis.push(dbl.clone());
-            }
-
-            let mut nn_table = vec![G::zero(); window_count * window_size];
-            for i in 0..window_count {
-                let w = i;
-                let start = w * b as usize;
-                let mut end = (w + 1) * b as usize;
-                if end > table_basis.len() {
-                    end = table_basis.len();
-                }
-                let window_basis: &mut [G] = &mut table_basis[start..end];
-                let mut table = vec![G::zero(); window_size];
-                Self::fill_window(window_basis, &mut *table);
-
-                for (j, table_element) in table.into_iter().enumerate() {
-                    nn_table[w * window_size + j] = table_element;
-                }
-            }
-
-            final_nn_table.push(nn_table);
-        }
-
-        final_nn_table
-    }
 
     pub fn new(basis: &[Element], t: usize, b: usize)-> MSMPrecompWnafGotti {
         let wnaf_gotti_context = WnafGottiContext::new(t,b);
@@ -89,19 +47,7 @@ impl MSMPrecompWnafGotti {
             b
         }
     }
-    pub fn new_window(basis: &[Element], t: usize, b: usize)-> MSMPrecompWnafGotti {
-        let wnaf_gotti_context = WnafGottiContext::new(t,b);
 
-        // Parallel generation of precompute tables
-        // 并行生成预计算表
-        MSMPrecompWnafGotti {
-            tables: basis.par_iter().map(|base|{
-                wnaf_gotti_context.table_window(base.0)
-            }).collect(),
-            t,
-            b
-        }
-    }
     pub fn mul(&self, scalars: &[Fr]) -> Element {
         let wnaf_gotti_context = WnafGottiContext::new(self.t,self.b);
         let result: EdwardsProjective = scalars
@@ -113,28 +59,7 @@ impl MSMPrecompWnafGotti {
 
         Element(result)
     }
-    pub fn mul_window(&self, scalars: &[Fr]) -> Element {
-        let wnaf_gotti_context = WnafGottiContext::new(self.t,self.b);
-        let result: EdwardsProjective = scalars
-            .iter()
-            .zip(self.tables.iter())
-            .filter(|(scalar, _)| !scalar.is_zero())
-            .map(|(scalar, table)| wnaf_gotti_context.mul_with_table_normal(table, scalar).unwrap())
-            .sum();
 
-        Element(result)
-    }
-    pub fn mul_naf(&self, scalars: &[Fr]) -> Element {
-        let wnaf_gotti_context = WnafGottiContext::new(self.t,self.b);
-        let result: EdwardsProjective = scalars
-            .iter()
-            .zip(self.tables.iter())
-            .filter(|(scalar, _)| !scalar.is_zero())
-            .map(|(scalar, table)| wnaf_gotti_context.mul_with_table_normal(table, scalar).unwrap())
-            .sum();
-
-        Element(result)
-    }
     pub fn gotti_window(&self, scalars: &[Fr]) -> Vec<Vec<u16>> {
         let wnaf_gotti_context = WnafGottiContext::new(self.t,self.b);
         let scalar=scalars[0];
@@ -157,7 +82,7 @@ mod tests {
     use super::*;
     use crate::{ Element};
     use crate::{msm_gotti::MSMPrecompWnafGotti, Fr};
-    use crate::msm::MSMPrecompWnaf;
+    use crate::msm_window::MSMPrecompWnaf;
 
     #[test]
     fn testmain(){
@@ -178,27 +103,6 @@ mod tests {
         let precompute=MSMPrecompWnafGotti::new(&basic_crs, 2,8);
         let x= Element::batch_extended_point_normalized(&*precompute.tables[0].clone());
         println!("precompute: {:?}", x.len());
-
-    }
-    #[test]
-    fn correctness_gotti_precompute_one_table_test1() {
-        // Create a vector of 256 elements, each being a multiple of the prime subgroup generator
-        // 创建一个包含 256 个元素的向量，每个元素都是素数子群生成元的倍数
-        let mut basic_crs = Vec::with_capacity(2);
-        for i in 0..2 {
-            basic_crs.push(Element::prime_subgroup_generator() * Fr::from((i + 1) as u64));
-        }
-
-        // Perform the operation
-        let basic: Vec<_> = basic_crs.par_iter().map(|base| base.0).collect();
-        let precompute_table = MSMPrecompWnafGotti::table(basic, 2, 8);
-        //basic_crs.0
-        let precompute=MSMPrecompWnafGotti::new(&basic_crs, 2,8);
-        println!("precompute: {:?}", precompute_table.len());
-        let x= Element::batch_extended_point_normalized(&*precompute.tables[0].clone());
-        println!("precompute: {:?}", x.len());
-        assert_eq!(precompute_table, precompute.tables);
-        //let mut scalars = vec![];
 
     }
     #[test]
@@ -274,12 +178,12 @@ mod tests {
         scalars.push(Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap());
 
 
-        let precompute=MSMPrecompWnafGotti::new_window(&basic_crs, 2,4);
+        let precompute=MSMPrecompWnafGotti::new(&basic_crs, 2,4);
         let mem_byte_size=precompute.tables.len()*precompute.tables[0].len()*4*32;
         println!("precompute_size: {:?}", mem_byte_size);
         use std::time::Instant;
         let start = Instant::now();
-        let got_result = precompute.mul_window(&scalars);
+        let got_result = precompute.mul(&scalars);
         let duration = start.elapsed();
         println!("Time elapsed in mul is: {:?}", duration);
 
@@ -339,7 +243,7 @@ mod tests {
         // Create a vector of 256 elements, each being a multiple of the prime subgroup generator
         // 创建一个包含 256 个元素的向量，每个元素都是素数子群生成元的倍数
 
-        let scalar_num = 10;
+        let scalar_num = 1;
         let basis_num = 1;
         let mut basic_crs = Vec::with_capacity(basis_num);
         for i in 0..basis_num {

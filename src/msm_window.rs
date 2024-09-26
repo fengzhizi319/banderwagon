@@ -127,6 +127,8 @@ impl MSMPrecompWnaf {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+    use ark_ec::CurveGroup;
     use super::*;
     use crate::{multi_scalar_mul, Element};
 
@@ -188,5 +190,41 @@ mod tests {
         // 比较结果
         assert_eq!(result, got_result);
         assert_eq!(result, got_par_result);
+    }
+    #[test]
+    fn correctness_window_msm_one_g() {
+        // Create a vector of 256 elements, each being a multiple of the prime subgroup generator
+        // 创建一个包含 256 个元素的向量，每个元素都是素数子群生成元的倍数
+
+        let basis_num = 1;
+        let mut basic_crs = Vec::with_capacity(basis_num);
+        for i in 0..basis_num {
+            basic_crs.push(Element::prime_subgroup_generator() * Fr::from((i + 1) as u64));
+        }
+        let mut scalars = vec![];
+        //q-1
+        scalars.push(Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap());
+
+
+        let precompute=MSMPrecompWnaf::new(&basic_crs, 10);
+        let mem_byte_size=precompute.tables.len()*precompute.tables[0].len()*4*32;
+        println!("precompute_size: {:?}", mem_byte_size);
+        use std::time::Instant;
+        let start = Instant::now();
+
+        let got_result = precompute.mul(&scalars);
+
+        let duration = start.elapsed();
+        println!("Time elapsed in mul is: {:?}", duration);
+
+        let affine_result= got_result.0.into_affine();
+        let string_x="33549696307925229982445904590536874618633472405590028303463218160177641247209";
+        let string_y="19188667384257783945677642223292697773471335439753913231509108946878080696678";
+        let x= affine_result.x.to_string();
+        let y= affine_result.y.to_string();
+        assert_eq!(string_x, x);
+        assert_eq!(string_y, y);
+        println!("got_result: {:?}", affine_result);
+
     }
 }

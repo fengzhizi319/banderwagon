@@ -63,7 +63,12 @@ impl WnafContext {
         }
 
         // 将标量转换为 wNAF 数据
+        let wnaf_data1 = WnafContext::scalar_to_wnaf_data1::<G>(scalar, self.window_size);
         let wnaf_data = WnafContext::scalar_to_wnaf_data::<G>(scalar, self.window_size);
+        println!("wnaf_data: {:?}", wnaf_data);
+        println!("wnaf_data1: {:?}", wnaf_data1);
+        println!("wnaf_data len: {:?}", wnaf_data.len());
+        assert_eq!(wnaf_data, wnaf_data1);
 
         let pre_comp_size = 1 << (self.window_size - 1);
         let mut result = G::zero();
@@ -92,6 +97,7 @@ impl WnafContext {
         // 初始化偏移量为窗口大小
         let mut off = w;
 
+
         // 遍历源向量
         for i in 0..source.len() {
             // 如果偏移量不等于窗口大小，更新数据向量的最后一个元素
@@ -114,6 +120,7 @@ impl WnafContext {
             // 更新偏移量
             off = s.1 - off;
         }
+        println!("u64 win_data: {:?}", win_data);
 
         // 把 win_data 变成 <i64>
         let mut data: Vec<i64> = win_data.iter().map(|&x| x as i64).collect();
@@ -121,7 +128,7 @@ impl WnafContext {
 
         // 遍历 data，处理进位和负值
         for i in 0..data.len() {
-            if data[i] >= threshold {
+            if data[i] > threshold {
                 data[i] -= 1 << w;
                 if i + 1 < data.len() {
                     data[i + 1] += 1;
@@ -130,9 +137,50 @@ impl WnafContext {
                 }
             }
         }
+        println!("data: {:?}", data);
 
         // 返回 wNAF 数据向量
         data
+    }
+    fn scalar_to_wnaf_data1<G: PrimeGroup>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
+
+        // win_data
+        let source = WnafContext::scalar_to_u64::<G>(scalar);
+        let mut result = Vec::new();
+        let mut bit_buffer = 0u64;
+        let mut bits_in_buffer = 0;
+
+        for &value in &source {
+            bit_buffer |= value << bits_in_buffer;
+            bits_in_buffer += 64;
+
+            while bits_in_buffer >= w {
+                result.push((bit_buffer & ((1 << w) - 1)) as i64);
+                bit_buffer >>= w;
+                bits_in_buffer -= w;
+            }
+        }
+
+        if bits_in_buffer > 0 {
+            result.push(bit_buffer as i64);
+        }
+        println!("u64 result: {:?}", result);
+
+        // Adjust the result according to the condition
+        let threshold = 1 << (w-1);
+        for i in 0..result.len() {
+            if result[i] > threshold {
+                if i + 1 < result.len() {
+                    result[i + 1] += 1;
+                } else {
+                    result.push(1);
+                }
+                result[i] -= 1 << w;
+            }
+        }
+        print!("result: {:?}", result);
+
+        result
     }
     #[inline]
     fn scalar_to_u64<G: PrimeGroup>(scalar: &G::ScalarField) -> Vec<u64> {

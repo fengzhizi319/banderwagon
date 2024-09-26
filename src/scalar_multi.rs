@@ -61,15 +61,8 @@ impl WnafContext {
         if 1 << (self.window_size - 1) > base_table.len() {
             return None;
         }
-
         // 将标量转换为 wNAF 数据
-        let wnaf_data1 = WnafContext::scalar_to_wnaf_data1::<G>(scalar, self.window_size);
         let wnaf_data = WnafContext::scalar_to_wnaf_data::<G>(scalar, self.window_size);
-        println!("wnaf_data: {:?}", wnaf_data);
-        println!("wnaf_data1: {:?}", wnaf_data1);
-        println!("wnaf_data len: {:?}", wnaf_data.len());
-        assert_eq!(wnaf_data, wnaf_data1);
-
         let pre_comp_size = 1 << (self.window_size - 1);
         let mut result = G::zero();
         // 遍历 wNAF 数据
@@ -87,62 +80,8 @@ impl WnafContext {
         Some(result)
     }
 
+
     fn scalar_to_wnaf_data<G: PrimeGroup>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
-        // 将标量转换为 u64 向量，蒙哥马利域转为整数域
-        let source = WnafContext::scalar_to_u64::<G>(scalar);
-        // mask用来异或取最低的w位
-        let mask = (1 << w) - 1;
-        // 创建一个空向量来存储 wNAF 数据
-        let mut win_data = vec![];
-        // 初始化偏移量为窗口大小
-        let mut off = w;
-
-
-        // 遍历源向量
-        for i in 0..source.len() {
-            // 如果偏移量不等于窗口大小，更新数据向量的最后一个元素
-            let s = if off != w {
-                let mask = (1 << (w - off)) - 1;
-                let j = win_data.len() - 1;
-                win_data[j] += (source[i] & mask) << off;
-                (source[i] >> (w - off), 64 - w + off)
-            } else {
-                (source[i], 64)
-            };
-
-            // 以窗口大小为步长遍历剩余的位
-            for j in (0..s.1).step_by(w) {
-                // 提取窗口值并将其推入数据向量
-                let d = (s.0 >> j) & mask;
-                win_data.push(d);
-                off = j;
-            }
-            // 更新偏移量
-            off = s.1 - off;
-        }
-        println!("u64 win_data: {:?}", win_data);
-
-        // 把 win_data 变成 <i64>
-        let mut data: Vec<i64> = win_data.iter().map(|&x| x as i64).collect();
-        let threshold = 1 << (w - 1);
-
-        // 遍历 data，处理进位和负值
-        for i in 0..data.len() {
-            if data[i] > threshold {
-                data[i] -= 1 << w;
-                if i + 1 < data.len() {
-                    data[i + 1] += 1;
-                } else {
-                    data.push(1);
-                }
-            }
-        }
-        println!("data: {:?}", data);
-
-        // 返回 wNAF 数据向量
-        data
-    }
-    fn scalar_to_wnaf_data1<G: PrimeGroup>(scalar: &G::ScalarField, w: usize) -> Vec<i64> {
 
         // win_data
         let source = WnafContext::scalar_to_u64::<G>(scalar);
@@ -151,20 +90,26 @@ impl WnafContext {
         let mut bits_in_buffer = 0;
 
         for &value in &source {
-            bit_buffer |= value << bits_in_buffer;
-            bits_in_buffer += 64;
+            if  bits_in_buffer!=0 {
+                bit_buffer |= (value << bits_in_buffer) & ((1 << w) - 1);
+                result.push(bit_buffer as i64);
+                bit_buffer = value>>(w-bits_in_buffer);
+                bits_in_buffer =64-(w-bits_in_buffer);
+            }else {
+                bit_buffer=value;
+                bits_in_buffer = 64;
+            }
 
             while bits_in_buffer >= w {
-                result.push((bit_buffer & ((1 << w) - 1)) as i64);
+                result.push((bit_buffer & ((1 << w) - 1)) as i64 );
                 bit_buffer >>= w;
                 bits_in_buffer -= w;
             }
         }
 
         if bits_in_buffer > 0 {
-            result.push(bit_buffer as i64);
+            result.push(bit_buffer as i64 );
         }
-        println!("u64 result: {:?}", result);
 
         // Adjust the result according to the condition
         let threshold = 1 << (w-1);
@@ -178,7 +123,6 @@ impl WnafContext {
                 result[i] -= 1 << w;
             }
         }
-        print!("result: {:?}", result);
 
         result
     }

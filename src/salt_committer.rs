@@ -300,9 +300,24 @@ impl Committer {
 #[cfg(not(target_arch = "x86_64"))]
 fn add_affine_point(result: &mut EdwardsProjective, p2_x: &Fq, p2_y: &Fq) {
     use ark_ff::biginteger::BigInt;
+    println!("begin add_affine_point");
+    println!("result.x: {:?}", result.x);
+    println!("result.y: {:?}", result.y);
+    println!("result.t: {:?}", result.t);
+    println!("result.z: {:?}", result.z);
 
+    println!("p2_x: {:?}", p2_x);
+    println!("p2_y: {:?}", p2_y);
+
+    println!("result.x: {:?}", result.x);
     let mut a = result.x * p2_x;
+    println!("a: {:?}", a);
+
+    println!("result.y: {:?}", result.y);
+    println!("p2_y: {:?}", p2_y);
     let b = result.y * p2_y;
+    println!("b: {:?}", b);
+
     let mut c = p2_x * p2_y;
     let mut d = result.t * c;
 
@@ -572,7 +587,7 @@ mod tests {
         )
         .unwrap();
 
-        let precompute = Committer::new(&basic_crs, 11);
+        let precompute = Committer::new(&basic_crs, 5);
         let mem_byte_size = precompute.tables.len() * precompute.tables[0].len() * 2 * 32;
         println!("precompute_size: {:?}", mem_byte_size);
         use std::time::Instant;
@@ -591,7 +606,8 @@ mod tests {
         let y = affine_result.y.to_string();
         assert_eq!(string_x, x);
         assert_eq!(string_y, y);
-        println!("got_result: {:?}", affine_result);
+        println!("got_result x: {:X?}", affine_result.x);
+        println!("got_result y: {:X?}", affine_result.y);
     }
     #[test]
     fn correctness_benchmark_manual() {

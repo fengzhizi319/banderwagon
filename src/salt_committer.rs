@@ -112,7 +112,6 @@ impl Committer {
 
     #[cfg(target_os = "macos")]
     pub fn new(bases: &[Element], window_size: usize) -> Committer {
-        let table_num = bases.len();
         let win_num = 253 / window_size + 1;  // 253 is the bit length of Fr
         let inner_length = win_num * (1 << (window_size - 1)) + win_num;
 

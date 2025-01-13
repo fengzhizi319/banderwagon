@@ -62,6 +62,8 @@ impl MSMPrecompWnaf {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+    use ark_ec::CurveGroup;
     use super::*;
     use crate::{multi_scalar_mul, Element};
 
@@ -85,5 +87,28 @@ mod tests {
 
         assert_eq!(result, got_result);
         assert_eq!(result, got_par_result);
+    }
+    #[test]
+    fn correctness_smoke_test_compare() {
+        let basis_num = 1;
+        let mut basic_crs = Vec::with_capacity(basis_num);
+        for i in 0..basis_num {
+            basic_crs.push(Element::prime_subgroup_generator() * Fr::from((i + 1) as u64));
+        }
+        let mut scalars = vec![];
+        //q-1
+        scalars.push(Fr::from_str("13108968793781547619861935127046491459309155893440570251786403306729687672800").unwrap());
+
+        let precompute=MSMPrecompWnaf::new(&basic_crs, 2);
+
+        let got_result = precompute.mul(&scalars);
+
+        let affine_result= got_result.0.into_affine();
+        let string_x="33549696307925229982445904590536874618633472405590028303463218160177641247209";
+        let string_y="19188667384257783945677642223292697773471335439753913231509108946878080696678";
+        let x= affine_result.x.to_string();
+        let y= affine_result.y.to_string();
+        assert_eq!(string_x, x);
+        assert_eq!(string_y, y);
     }
 }

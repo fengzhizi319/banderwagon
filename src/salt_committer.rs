@@ -300,26 +300,28 @@ impl Committer {
 #[cfg(not(target_arch = "x86_64"))]
 fn add_affine_point(result: &mut EdwardsProjective, p2_x: &Fq, p2_y: &Fq) {
     use ark_ff::biginteger::BigInt;
-    println!("begin add_affine_point");
-    println!("result.x: {:?}", result.x);
-    println!("result.y: {:?}", result.y);
-    println!("result.t: {:?}", result.t);
-    println!("result.z: {:?}", result.z);
+    //println!("begin add_affine_point");
+    //println!("result.x: {:?}", result.x);
+    //println!("result.y: {:?}", result.y);
+    //println!("result.t: {:?}", result.t);
+    //println!("result.z: {:?}", result.z);
 
-    println!("p2_x: {:?}", p2_x);
-    println!("p2_y: {:?}", p2_y);
+    //println!("p2_x: {:?}", p2_x);
+    //println!("p2_y: {:?}", p2_y);
 
-    println!("result.x: {:?}", result.x);
+    //println!("result.x: {:?}", result.x);
     let mut a = result.x * p2_x;
-    println!("a: {:?}", a);
+    //println!("a: {:?}", a);
 
-    println!("result.y: {:?}", result.y);
-    println!("p2_y: {:?}", p2_y);
+    //println!("result.y: {:?}", result.y);
+    //println!("p2_y: {:?}", p2_y);
     let b = result.y * p2_y;
-    println!("b: {:?}", b);
+    //println!("b: {:?}", b);
 
     let mut c = p2_x * p2_y;
+    //println!("c: {:?}", c);
     let mut d = result.t * c;
+    //println!("d: {:?}", d);
 
     c = d * Fq::new_unchecked(BigInt::new([
         12167860994669987632u64,
@@ -327,13 +329,21 @@ fn add_affine_point(result: &mut EdwardsProjective, p2_x: &Fq, p2_y: &Fq) {
         6052647550941614584u64,
         3904213385886034240u64,
     ]));
+    //println!("c: {:?}", c);
 
     d = (result.x + result.y) * (p2_x + p2_y);
+    //println!("d: {:?}", d);
     let e = d - a - b;
     let f = result.z - c;
     let g = result.z + c;
+    //println!("e: {:?}", e);
+    //println!("f: {:?}", f);
+    //println!("g: {:?}", g);
+
     a = a * Fq::from(5u64);
+    //println!("a: {:?}", a);
     let h = b + a;
+    //println!("h: {:?}", h);
 
     result.x = e * f;
     result.y = g * h;
@@ -511,7 +521,7 @@ mod tests {
     use crate::{element::Element, multi_scalar_mul};
     use ark_ec::CurveGroup;
     use ark_ed_on_bls12_381_bandersnatch::Fr;
-    use ark_ff::UniformRand;
+    use ark_ff::{UniformRand};
     use rand_chacha::rand_core::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::str::FromStr;
@@ -575,7 +585,6 @@ mod tests {
     #[test]
     fn correctness_for_debug() {
         // Create a vector of 256 elements, each being a multiple of the prime subgroup generator
-
         let basis_num = 1;
         let mut basic_crs = Vec::with_capacity(basis_num);
         for i in 0..basis_num {
@@ -588,8 +597,6 @@ mod tests {
         .unwrap();
 
         let precompute = Committer::new(&basic_crs, 5);
-        let mem_byte_size = precompute.tables.len() * precompute.tables[0].len() * 2 * 32;
-        println!("precompute_size: {:?}", mem_byte_size);
         use std::time::Instant;
         let start = Instant::now();
         let got_result = precompute.mul_index(&scalar, 0);

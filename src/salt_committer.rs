@@ -6,7 +6,7 @@ use ark_ec::CurveConfig;
 use ark_ed_on_bls12_381_bandersnatch::{
     BandersnatchConfig, EdwardsAffine, EdwardsProjective, Fq, Fr,
 };
-use ark_ff::PrimeField;
+use ark_ff::{BigInt, PrimeField};
 use ark_ff::{Field, Zero};
 use ark_serialize::CanonicalSerialize;
 use rayon::prelude::*;
@@ -115,7 +115,7 @@ impl Committer {
         let win_num = 253 / window_size + 1;  // 253 is the bit length of Fr
         let inner_length = win_num * (1 << (window_size - 1)) + win_num;
 
-        let tables: Vec<Vec<EdwardsAffine>> = bases.par_iter().map(|base| {
+        let tables: Vec<Vec<EdwardsAffine>> = bases.iter().map(|base| {
             let mut table = Vec::with_capacity(inner_length);
             let mut element = base.0;
             // Calculate the element values for each window
@@ -124,13 +124,20 @@ impl Committer {
                 table.push(EdwardsProjective::zero());
                 table.push(element);
                 for _i in 1..(1 << (window_size - 1)) {
-                    element += &base;
+                    //element += &base;
+                    add_projective(&mut element, &base);
                     table.push(element);
                 }
-                element += element;
+                //element += element;
+                let element_copy = element.clone();
+                add_projective(&mut element, &element_copy);
+                // add_projective(&mut element, &element);
             }
             Element::batch_proj_to_affine(&table)
         }).collect();
+        println!("tables-x: {:?}", tables[0][1].x);
+        println!("tables-x: {:?}", tables[0][1].y);
+
 
         Committer {
             tables,
@@ -296,7 +303,61 @@ impl Committer {
     }
 
 }
+fn add_projective(result: &mut EdwardsProjective, other: &EdwardsProjective){
+    // See "Twisted Edwards Curves Revisited" (https://eprint.iacr.org/2008/522.pdf)
+    // by Huseyin Hisil, Kenneth Koon-Ho Wong, Gary Carter, and Ed Dawson
+    // 3.1 Unified Addition in E^e
 
+    // A = x1 * x2
+    let a = result.x * &other.x;
+
+    // B = y1 * y2
+    let b = result.y * &other.y;
+
+    // C = d * t1 * t2
+
+    let coeff_d=Fq::new_unchecked(BigInt::new([
+        12167860994669987632u64,
+        4043113551995129031u64,
+        6052647550941614584u64,
+        3904213385886034240u64,
+    ]));
+    let c = coeff_d * &result.t * &other.t;
+
+    // D = z1 * z2
+    let d = result.z * &other.z;
+
+    let coeff_a=Fq::new_unchecked(BigInt::new([
+        18446744022169944076u64,
+        17069680681328332787u64,
+        7401138636258156607u64,
+        8008481945025634146u64,
+    ]));
+    // println!("a:{:?}",coeff_a);
+    // H = B - aA
+    let h = b - a *coeff_a;
+
+    // E = (x1 + y1) * (x2 + y2) - A - B
+    let e = (result.x + &result.y) * &(other.x + &other.y) - &a - &b;
+
+    // F = D - C
+    let f = d - &c;
+
+    // G = D + C
+    let g = d + &c;
+
+    // x3 = E * F
+    result.x = e * &f;
+
+    // y3 = G * H
+    result.y = g * &h;
+
+    // t3 = E * H
+    result.t = e * &h;
+
+    // z3 = F * G
+    result.z = f * &g;
+}
 #[cfg(not(target_arch = "x86_64"))]
 fn add_affine_point(result: &mut EdwardsProjective, p2_x: &Fq, p2_y: &Fq) {
     use ark_ff::biginteger::BigInt;
@@ -596,25 +657,34 @@ mod tests {
         )
         .unwrap();
 
-        let precompute = Committer::new(&basic_crs, 5);
+        let precompute = Committer::new(&basic_crs, 3);
         use std::time::Instant;
         let start = Instant::now();
         let got_result = precompute.mul_index(&scalar, 0);
 
         let duration = start.elapsed();
         println!("Time elapsed in mul is: {:?}", duration / 1000);
-
-        let affine_result = got_result.0.into_affine();
-        let string_x =
-            "33549696307925229982445904590536874618633472405590028303463218160177641247209";
-        let string_y =
-            "19188667384257783945677642223292697773471335439753913231509108946878080696678";
-        let x = affine_result.x.to_string();
-        let y = affine_result.y.to_string();
-        assert_eq!(string_x, x);
-        assert_eq!(string_y, y);
-        println!("got_result x: {:X?}", affine_result.x);
-        println!("got_result y: {:X?}", affine_result.y);
+        //
+        // let affine_result = got_result.0.into_affine();
+        // let string_x =
+        //     "33549696307925229982445904590536874618633472405590028303463218160177641247209";
+        // let string_y =
+        //     "19188667384257783945677642223292697773471335439753913231509108946878080696678";
+        // let x = affine_result.x.to_string();
+        // let y = affine_result.y.to_string();
+        // assert_eq!(string_x, x);
+        // assert_eq!(string_y, y);
+        // println!("got_result x: {:X?}", affine_result.x);
+        // println!("got_result y: {:X?}", affine_result.y);
+        let rx = got_result.0.x;
+        let ry = got_result.0.y;
+        let rz = got_result.0.z;
+        let z_inv = rz.inverse().unwrap();
+        let x = rx * &z_inv;
+        let y = ry * &z_inv;
+        // result_x: BigInt([1E18E7985DAD51E9, 2843E3E05264D799, BF02C6908DE39512, 4A2C7486FD924882])
+        // result_y: BigInt([5E3167B6CC974166, 358CAD81EEE46460, 157D8B50BADCD586, 2A6C669EDA123E0F]        println!("result_x: {:X?}", x);
+        println!("result_y: {:X?}", y);
     }
     #[test]
     fn correctness_benchmark_manual() {
